@@ -40,6 +40,7 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 - 🔗 **Detección automática**: sin comandos. Juegos, DLC, paquetes (`/sub/`) y bundles, varios por mensaje.
 - 🧉 **Juegos argentinos**: los destaca en la tarjeta (lista del curador de Steam que usa Steamcito).
 - 🔥 **Ofertas destacadas**: `/ofertas` o todos los días en el canal que elijas, con precio en pesos.
+- 🔔 **Deseados**: cada uno arma su lista con `/deseado` y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
 - 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
 - 💸 **Precio en pesos** con los impuestos vigentes, según el medio de pago.
@@ -89,13 +90,18 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 |---|---|---|
 | `/ofertas` | Ofertas destacadas de Steam con precio en pesos | Todos |
 | `/rebajas` | Rebaja actual y próximas, con cuenta regresiva | Todos |
-| `/config canal` | Elegir el canal de las ofertas diarias o de los avisos de rebajas | Admins* |
+| `/deseado agregar` | Agregar un juego a tus deseados (por nombre o link) | Todos |
+| `/deseado lista` · `/deseado quitar` | Ver o sacar juegos de tus deseados | Todos |
+| `/ayuda` | Qué hace Vapora y cómo usarla | Todos |
+| `/config canal` | Elegir el canal de las ofertas diarias, los avisos de rebajas o los avisos de deseados | Admins* |
 | `/config desactivar` | Dejar de publicar ofertas o avisos | Admins* |
 | `/config ver` | Ver la configuración del servidor | Admins* |
 
 <sub>* Quienes tengan el permiso **Gestionar servidor**. Se puede cambiar en Ajustes del servidor → Integraciones → Vapora.</sub>
 
-Cada servidor elige sus propios canales. Se guardan en `data/state.json` junto con los avisos ya enviados, para no repetirlos al reiniciar.
+Cada servidor elige sus propios canales. Se guardan en `data/state.json` junto con los avisos ya enviados y las listas de deseados.
+
+Los deseados se revisan cada hora. Vapora avisa **una vez por oferta** (y otra si el precio baja más) en el canal elegido con `/config canal` → *Avisos de deseados*, mencionando a cada persona. Si el servidor no eligió canal, avisa por MD.
 
 ## ⚙️ Configuración
 
@@ -137,6 +143,8 @@ journalctl -u vapora -f     # ver logs
 ├── steam.py            # Consultas a la tienda y reseñas de Steam
 ├── prices.py           # Cotizaciones y conversión a pesos
 ├── sales.py            # Calendario de rebajas de Steam
+├── wishlist.py         # Deseados: cuándo avisar de una oferta
+├── storage.py          # Canales, avisos enviados y deseados (JSON)
 ├── announcements.py    # Tarjetas de ofertas y avisos de rebajas
 ├── formatting.py       # Formato de precios (USD y pesos)
 ├── config.py           # Impuestos y parámetros configurables

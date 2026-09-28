@@ -37,3 +37,18 @@ def test_corrupt_state_file_starts_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STATE_FILE", str(path))
     assert storage.all_guild_settings() == {}
     assert storage.sent_announcements() == set()
+
+
+def test_wishlist_channel(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "STATE_FILE", str(tmp_path / "state.json"))
+    storage.set_channel(1, "deseados", 400)
+    assert storage.get_guild_settings(1) == {"wishlist_channel": 400}
+
+
+def test_help_shows_admin_section_only_to_admins():
+    from bot import build_help_embed
+    admin = [f.name for f in build_help_embed(is_admin=True).fields]
+    member = [f.name for f in build_help_embed(is_admin=False).fields]
+    assert "⚙️ Administración" in admin
+    assert "⚙️ Administración" not in member
+    assert "🎮 Comandos" in member

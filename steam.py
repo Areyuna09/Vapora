@@ -293,3 +293,14 @@ def parse_specials(payload: dict[str, Any]) -> list[dict[str, Any]]:
 async def get_featured_specials(country: str = "ar") -> list[dict[str, Any]]:
     payload = await _get_json(STEAM_FEATURED_URL, {"cc": country, "l": "spanish"})
     return parse_specials(payload)
+
+
+# ── Buscador de la tienda ─────────────────────────────────────────────────────
+STEAM_SEARCH_URL = "https://store.steampowered.com/api/storesearch/"
+
+
+async def search_store(term: str, country: str = "ar", limit: int = 10) -> list[dict[str, Any]]:
+    """Juegos que coinciden con el texto (lo que usa el buscador de la tienda)."""
+    payload = await _get_json(STEAM_SEARCH_URL, {"term": term, "cc": country, "l": "spanish"})
+    items = (payload or {}).get("items") or []
+    return [{"id": it["id"], "name": it["name"]} for it in items if it.get("type") == "app"][:limit]

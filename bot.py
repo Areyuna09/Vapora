@@ -21,8 +21,10 @@ from steam import (
     get_item_details,
     get_session,
     is_argentine,
+    search_store,
     store_url,
 )
+from wishlist import offer_action, resolve_game
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +41,7 @@ class SteamPriceBot(commands.Bot):
     async def setup_hook(self) -> None:
         post_daily_deals.start()
         check_sale_announcements.start()
+        check_wishlists.start()
 
     async def close(self) -> None:
         await close_session()
@@ -200,8 +203,65 @@ async def check_sale_announcements() -> None:
                 logging.exception("No se pudo enviar el aviso de %s (%s) en #%s", sale.name, kind, channel)
 
 
+def wish_channel_id(guild_id: int | None) -> int | None:
+    return storage.get_guild_settings(guild_id).get("wishlist_channel") if guild_id else None
+
+
+async def notify_wish(user_id: int, guild_id: int | None, data: dict, rates: dict[str, float]) -> bool:
+    """Avisa en el canal de deseados del servidor (mencionando al usuario); si no hay canal, por MD."""
+    text = f"🔔 ¡**{data['name']}**, de tu lista de deseados, está en oferta! (-{data['discount_percent']}%)"
+    embed = build_embed(data, rates)
+    channel = resolve_channel(wish_channel_id(guild_id))
+    if channel is not None:
+        try:
+            await channel.send(f"<@{user_id}> {text}", embed=embed,
+                               allowed_mentions=discord.AllowedMentions(users=True))
+            return True
+        except discord.HTTPException:
+            logging.exception("No pude avisar en #%s, pruebo por MD", channel)
+    try:
+        user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+        await user.send(text, embed=embed)
+        return True
+    except discord.HTTPException:
+        logging.warning("No pude avisarle a %s de la oferta de %s (sin canal y MD cerrados)", user_id, data["name"])
+        return False
+
+
+@tasks.loop(hours=1)
+async def check_wishlists() -> None:
+    wishlists = storage.all_wishlists()
+    if not wishlists:
+        return
+    rates = await get_rates(await get_session())
+    games: dict[int, dict | None] = {}
+    for app_id in {app_id for games_ in wishlists.values() for app_id in games_}:
+        try:
+            data = await get_item_details("app", app_id, country="ar")
+            games[app_id] = {**data, "argentine": await is_argentine(app_id)} if data else None
+        except Exception:
+            logging.exception("No pude consultar el precio del deseado %s", app_id)
+            games[app_id] = None
+
+    for user_id, user_games in wishlists.items():
+        for app_id, entry in user_games.items():
+            data = games.get(app_id)
+            if not data:
+                continue
+            action = offer_action(entry.get("notified_final"), data)
+            if action is None:
+                continue
+            kind, final = action
+            if kind == "notify" and not await notify_wish(user_id, entry.get("guild_id"), data, rates):
+                continue
+            storage.set_wish_notified(user_id, app_id, final)
+            if kind == "notify":
+                logging.info("Aviso de deseado: %s a %s", data["name"], user_id)
+
+
 @post_daily_deals.before_loop
 @check_sale_announcements.before_loop
+@check_wishlists.before_loop
 async def wait_until_ready() -> None:
     await bot.wait_until_ready()
 
@@ -223,8 +283,10 @@ async def rebajas(interaction: discord.Interaction) -> None:
 FEATURE_CHOICES = [
     app_commands.Choice(name="🔥 Ofertas destacadas (todos los días)", value="ofertas"),
     app_commands.Choice(name="📅 Avisos de rebajas de Steam", value="rebajas"),
+    app_commands.Choice(name="🔔 Avisos de deseados en oferta", value="deseados"),
 ]
-FEATURE_LABELS = {"ofertas": "🔥 Ofertas destacadas", "rebajas": "📅 Avisos de rebajas"}
+FEATURE_LABELS = {"ofertas": "🔥 Ofertas destacadas", "rebajas": "📅 Avisos de rebajas",
+                  "deseados": "🔔 Avisos de deseados"}
 
 config_group = app_commands.Group(
     name="config",
@@ -267,9 +329,11 @@ async def config_canal(interaction: discord.Interaction, que: app_commands.Choic
         )
         return
     storage.set_channel(interaction.guild_id, que.value, canal.id)
-    detail = (f"Las voy a publicar todos los días a las {config.DEALS_HOUR}:00."
-              if que.value == "ofertas" else
-              "Voy a avisar antes de cada rebaja, cuando empieza y en sus últimas 24 horas.")
+    detail = {
+        "ofertas": f"Las voy a publicar todos los días a las {config.DEALS_HOUR}:00.",
+        "rebajas": "Voy a avisar antes de cada rebaja, cuando empieza y en sus últimas 24 horas.",
+        "deseados": "Cuando un juego de la lista de alguien entre en oferta, lo menciono ahí.",
+    }[que.value]
     await interaction.response.send_message(
         f"✅ **{FEATURE_LABELS[que.value]}** → {canal.mention}\n{detail}", ephemeral=True)
     if que.value == "rebajas":
@@ -292,6 +356,143 @@ async def config_ver(interaction: discord.Interaction) -> None:
 bot.tree.add_command(config_group)
 
 
+# ── /deseado ──────────────────────────────────────────────────────────────────
+
+wish_group = app_commands.Group(name="deseado", description="Tu lista de deseados: Vapora te avisa cuando entran en oferta")
+
+
+@wish_group.command(name="agregar", description="Agregar un juego a tus deseados")
+@app_commands.describe(juego="Nombre del juego (elegilo de la lista) o link de Steam")
+async def wish_add(interaction: discord.Interaction, juego: str) -> None:
+    await interaction.response.defer(ephemeral=True)
+    resolved = await resolve_game(juego)
+    data = await get_item_details("app", resolved[0], country="ar") if resolved else None
+    if not data:
+        await interaction.followup.send("🤔 No encontré ese juego en Steam. Probá con el link de la tienda.")
+        return
+
+    app_id = data["id"]
+    on_sale = offer_action(None, data)  # si ya está en oferta, se avisa ahora y no se repite después
+    notified = on_sale[1] if on_sale else None
+    if not storage.add_wish(interaction.user.id, app_id, data["name"], interaction.guild_id, notified):
+        if app_id in storage.get_wishlist(interaction.user.id):
+            await interaction.followup.send(f"Ya tenías **{data['name']}** en tus deseados 😉")
+        else:
+            await interaction.followup.send(f"Tu lista está llena ({storage.MAX_WISHLIST} juegos). "
+                                            "Sacá alguno con `/deseado quitar`.")
+        return
+
+    if on_sale:
+        rates = await get_rates(await get_session())
+        await interaction.followup.send(
+            f"✅ Agregué **{data['name']}** a tus deseados. ¡Y ya está en oferta! 🔥",
+            embed=build_embed({**data, "argentine": await is_argentine(app_id)}, rates))
+    else:
+        await interaction.followup.send(
+            f"✅ Agregué **{data['name']}** a tus deseados. {where_wish_notice(interaction.guild_id)}")
+
+
+def where_wish_notice(guild_id: int | None) -> str:
+    channel_id = wish_channel_id(guild_id)
+    if channel_id:
+        return f"Te aviso en <#{channel_id}> cuando entre en oferta 🔔"
+    return "Te aviso por MD cuando entre en oferta 🔔"
+
+
+@wish_add.autocomplete("juego")
+async def wish_add_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    if len(current.strip()) < 2 or "steampowered.com" in current:
+        return []
+    try:
+        results = await search_store(current)
+    except Exception:
+        return []
+    return [app_commands.Choice(name=r["name"][:100], value=str(r["id"])) for r in results]
+
+
+@wish_group.command(name="quitar", description="Quitar un juego de tus deseados")
+@app_commands.describe(juego="Juego a quitar")
+async def wish_remove(interaction: discord.Interaction, juego: str) -> None:
+    name = storage.remove_wish(interaction.user.id, int(juego)) if juego.isdigit() else None
+    message = f"🗑️ Saqué **{name}** de tus deseados." if name else "Ese juego no está en tus deseados."
+    await interaction.response.send_message(message, ephemeral=True)
+
+
+@wish_remove.autocomplete("juego")
+async def wish_remove_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    games = storage.get_wishlist(interaction.user.id)
+    return [app_commands.Choice(name=entry["name"][:100], value=str(app_id))
+            for app_id, entry in games.items() if current.lower() in entry["name"].lower()][:25]
+
+
+@wish_group.command(name="lista", description="Ver tu lista de deseados")
+async def wish_list(interaction: discord.Interaction) -> None:
+    games = storage.get_wishlist(interaction.user.id)
+    if not games:
+        await interaction.response.send_message(
+            "Tu lista está vacía. Agregá juegos con `/deseado agregar` 📝", ephemeral=True)
+        return
+    lines = [f"• [{entry['name']}]({store_url('app', app_id)})" + (" 🔥" if entry.get("notified_final") else "")
+             for app_id, entry in games.items()]
+    embed = discord.Embed(title=f"📝 Tus deseados ({len(games)}/{storage.MAX_WISHLIST})",
+                          description="\n".join(lines), color=EMBED_COLOR)
+    embed.set_footer(text="🔥 = en oferta ahora · Reviso los precios cada hora")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+bot.tree.add_command(wish_group)
+
+
+# ── /ayuda ────────────────────────────────────────────────────────────────────
+
+def build_help_embed(is_admin: bool) -> discord.Embed:
+    embed = discord.Embed(
+        title="💨 ¡Hola, soy Vapora!",
+        description="Te digo cuánto salen los juegos de Steam en pesos argentinos 🇦🇷",
+        color=EMBED_COLOR,
+    )
+    embed.add_field(
+        name="🔗 Pegá un link de Steam",
+        value="Mandá un link de la tienda en cualquier canal y respondo con el precio en USD, "
+              "💳 Mercado Pago y 🟣 ARQ, reseñas y más. Funciona con juegos, DLC, paquetes y bundles. "
+              "Si el juego es argentino, lo marco con 🧉",
+        inline=False,
+    )
+    embed.add_field(
+        name="🎮 Comandos",
+        value="`/ofertas` · ofertas destacadas de Steam en pesos\n"
+              "`/rebajas` · la rebaja actual y las próximas\n"
+              "`/deseado agregar` · sumá un juego a tu lista y te aviso cuando entre en oferta\n"
+              "`/deseado lista` · `/deseado quitar` · ver o sacar juegos de tu lista\n"
+              "`/ayuda` · este mensaje",
+        inline=False,
+    )
+    if is_admin:
+        embed.add_field(
+            name="⚙️ Administración",
+            value="`/config canal` · elegir dónde publico ofertas diarias, avisos de rebajas y de deseados\n"
+                  "`/config ver` · ver la configuración del servidor\n"
+                  "`/config desactivar` · dejar de publicar algo",
+            inline=False,
+        )
+    embed.add_field(
+        name="💰 ¿Cómo calculo los precios?",
+        value=f"💳 **Mercado Pago**: USD × dólar oficial + IVA {config.IVA_PERCENT:g}%\n"
+              "🟣 **ARQ**: USD × dólar cripto, sin impuestos\n"
+              "Las cotizaciones se actualizan cada 30 minutos.",
+        inline=False,
+    )
+    embed.set_footer(text="Datos de Steam y DolarAPI")
+    return embed
+
+
+@bot.tree.command(name="ayuda", description="Qué hace Vapora y cómo usarla")
+async def ayuda(interaction: discord.Interaction) -> None:
+    perms = getattr(interaction.user, "guild_permissions", None)
+    is_admin = bool(perms and perms.manage_guild)
+    await interaction.response.send_message(embed=build_help_embed(is_admin), ephemeral=True)
+
+
 # ── Eventos ───────────────────────────────────────────────────────────────────
 
 _commands_synced = False
@@ -307,7 +508,7 @@ async def on_ready():
             bot.tree.copy_global_to(guild=guild)
             await bot.tree.sync(guild=guild)
         _commands_synced = True
-        logging.info("Comandos /ofertas, /rebajas y /config listos en %d servidor(es)", len(bot.guilds))
+        logging.info("Comandos /ofertas, /rebajas, /config, /deseado y /ayuda listos en %d servidor(es)", len(bot.guilds))
 
 
 @bot.event
