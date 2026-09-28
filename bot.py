@@ -426,15 +426,35 @@ class WishButton(discord.ui.DynamicItem[discord.ui.Button], template=r"vapora:wi
         await add_to_wishlist(interaction, data, show_card=False)
 
 
-def build_wish_buttons(games: list[dict]) -> discord.ui.View | None:
-    """Un botón por juego con precio (juegos y DLC; no gratis ni paquetes/bundles)."""
-    wishable = [g for g in games if g["kind"] == "app" and g.get("final_cents") is not None]
-    if not wishable:
+MAX_BUTTON_ROWS = 5  # límite de Discord
+
+
+def is_wishable(game: dict) -> bool:
+    """Se puede seguir como deseado: juegos y DLC con precio (no gratis ni paquetes/bundles)."""
+    return game["kind"] == "app" and game.get("final_cents") is not None
+
+
+def build_card_buttons(games: list[dict]) -> discord.ui.View | None:
+    """Botones de cada tarjeta: "Avisame si baja" (si se puede seguir) y "Abrir en el navegador".
+
+    Con un solo juego los botones tienen texto genérico; con varios, cada juego va en su
+    propia fila y el botón de aviso lleva el nombre para saber cuál es cuál.
+    """
+    if not games:
         return None
     view = discord.ui.View(timeout=None)
-    for game in wishable:
-        label = "🔔 Avisame si baja" if len(games) == 1 else f"🔔 {game['name']}"[:80]
-        view.add_item(WishButton(game["id"], label))
+    single = len(games) == 1
+    for index, game in enumerate(games):
+        row = index if len(games) <= MAX_BUTTON_ROWS else None
+        if is_wishable(game):
+            label = "🔔 Avisame si baja" if single else f"🔔 {game['name']}"[:80]
+            item = WishButton(game["id"], label)
+            item.item.row = row
+            view.add_item(item)
+        link_label = "🌐 Abrir en el navegador" if single else ("🌐 Abrir" if is_wishable(game)
+                                                               else f"🌐 {game['name']}"[:80])
+        view.add_item(discord.ui.Button(style=discord.ButtonStyle.link, label=link_label,
+                                        url=store_url(game["kind"], game["id"]), row=row))
     return view
 
 
@@ -588,7 +608,7 @@ async def on_message(message: discord.Message):
                 logging.exception("Error procesando %s %s", kind, item_id)
 
         if embeds:
-            view = build_wish_buttons(games)
+            view = build_card_buttons(games)
             await message.reply(embeds=embeds, view=view or discord.utils.MISSING, mention_author=False)
             await suppress_original_embeds(message)
 
