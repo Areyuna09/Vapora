@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime, time, timezone
 
 import discord
@@ -42,6 +43,7 @@ class SteamPriceBot(commands.Bot):
         post_daily_deals.start()
         check_sale_announcements.start()
         check_wishlists.start()
+        self.add_dynamic_items(WishButton)  # botones "Avisame si baja" de mensajes anteriores
 
     async def close(self) -> None:
         await close_session()
@@ -368,28 +370,72 @@ async def wish_add(interaction: discord.Interaction, juego: str) -> None:
     resolved = await resolve_game(juego)
     data = await get_item_details("app", resolved[0], country="ar") if resolved else None
     if not data:
-        await interaction.followup.send("🤔 No encontré ese juego en Steam. Probá con el link de la tienda.")
+        await interaction.followup.send("🤔 No encontré ese juego en Steam. Probá con el link de la tienda.",
+                                        ephemeral=True)
         return
+    await add_to_wishlist(interaction, data, show_card=True)
 
+
+async def add_to_wishlist(interaction: discord.Interaction, data: dict, show_card: bool) -> None:
+    """Suma el juego a los deseados de quien usó el comando o tocó el botón, y le responde en privado."""
     app_id = data["id"]
     on_sale = offer_action(None, data)  # si ya está en oferta, se avisa ahora y no se repite después
     notified = on_sale[1] if on_sale else None
     if not storage.add_wish(interaction.user.id, app_id, data["name"], interaction.guild_id, notified):
         if app_id in storage.get_wishlist(interaction.user.id):
-            await interaction.followup.send(f"Ya tenías **{data['name']}** en tus deseados 😉")
+            message = f"Ya tenías **{data['name']}** en tus deseados 😉"
         else:
-            await interaction.followup.send(f"Tu lista está llena ({storage.MAX_WISHLIST} juegos). "
-                                            "Sacá alguno con `/deseado quitar`.")
+            message = (f"Tu lista está llena ({storage.MAX_WISHLIST} juegos). "
+                       "Sacá alguno con `/deseado quitar`.")
+        await interaction.followup.send(message, ephemeral=True)
         return
 
     if on_sale:
-        rates = await get_rates(await get_session())
-        await interaction.followup.send(
-            f"✅ Agregué **{data['name']}** a tus deseados. ¡Y ya está en oferta! 🔥",
-            embed=build_embed({**data, "argentine": await is_argentine(app_id)}, rates))
+        message = f"✅ Agregué **{data['name']}** a tus deseados. ¡Y ya está en oferta! 🔥"
+        embed = None
+        if show_card:
+            rates = await get_rates(await get_session())
+            embed = build_embed({**data, "argentine": await is_argentine(app_id)}, rates)
+        await interaction.followup.send(message, embed=embed or discord.utils.MISSING, ephemeral=True)
     else:
         await interaction.followup.send(
-            f"✅ Agregué **{data['name']}** a tus deseados. {where_wish_notice(interaction.guild_id)}")
+            f"✅ Agregué **{data['name']}** a tus deseados. {where_wish_notice(interaction.guild_id)}",
+            ephemeral=True)
+
+
+class WishButton(discord.ui.DynamicItem[discord.ui.Button], template=r"vapora:wish:(?P<app_id>\d+)"):
+    """Botón "Avisame si baja" de las tarjetas. Sigue funcionando después de reiniciar el bot."""
+
+    def __init__(self, app_id: int, label: str = "🔔 Avisame si baja") -> None:
+        super().__init__(discord.ui.Button(label=label, style=discord.ButtonStyle.secondary,
+                                           custom_id=f"vapora:wish:{app_id}"))
+        self.app_id = app_id
+
+    @classmethod
+    async def from_custom_id(cls, interaction: discord.Interaction, item: discord.ui.Button,
+                             match: "re.Match[str]") -> "WishButton":
+        return cls(int(match["app_id"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        data = await get_item_details("app", self.app_id, country="ar")
+        if not data:
+            await interaction.followup.send("😕 No pude consultar ese juego en Steam. Probá de nuevo en un rato.",
+                                            ephemeral=True)
+            return
+        await add_to_wishlist(interaction, data, show_card=False)
+
+
+def build_wish_buttons(games: list[dict]) -> discord.ui.View | None:
+    """Un botón por juego con precio (juegos y DLC; no gratis ni paquetes/bundles)."""
+    wishable = [g for g in games if g["kind"] == "app" and g.get("final_cents") is not None]
+    if not wishable:
+        return None
+    view = discord.ui.View(timeout=None)
+    for game in wishable:
+        label = "🔔 Avisame si baja" if len(games) == 1 else f"🔔 {game['name']}"[:80]
+        view.add_item(WishButton(game["id"], label))
+    return view
 
 
 def where_wish_notice(guild_id: int | None) -> str:
@@ -462,7 +508,7 @@ def build_help_embed(is_admin: bool) -> discord.Embed:
         name="🎮 Comandos",
         value="`/ofertas` · ofertas destacadas de Steam en pesos\n"
               "`/rebajas` · la rebaja actual y las próximas\n"
-              "`/deseado agregar` · sumá un juego a tu lista y te aviso cuando entre en oferta\n"
+              "`/deseado agregar` · sumá un juego a tu lista (o tocá 🔔 en una tarjeta) y te aviso cuando entre en oferta\n"
               "`/deseado lista` · `/deseado quitar` · ver o sacar juegos de tu lista\n"
               "`/ayuda` · este mensaje",
         inline=False,
@@ -529,6 +575,7 @@ async def on_message(message: discord.Message):
     )
     if items:
         embeds = []
+        games = []
         rates = await get_rates(await get_session())
         for kind, item_id in items:
             try:
@@ -536,11 +583,13 @@ async def on_message(message: discord.Message):
                 if data:
                     argentine = kind == "app" and await is_argentine(item_id)
                     embeds.append(build_embed({**data, "argentine": argentine}, rates))
+                    games.append(data)
             except Exception:
                 logging.exception("Error procesando %s %s", kind, item_id)
 
         if embeds:
-            await message.reply(embeds=embeds, mention_author=False)
+            view = build_wish_buttons(games)
+            await message.reply(embeds=embeds, view=view or discord.utils.MISSING, mention_author=False)
             await suppress_original_embeds(message)
 
     await bot.process_commands(message)

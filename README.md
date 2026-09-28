@@ -40,7 +40,7 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 - 🔗 **Detección automática**: sin comandos. Juegos, DLC, paquetes (`/sub/`) y bundles, varios por mensaje.
 - 🧉 **Juegos argentinos**: los destaca en la tarjeta (lista del curador de Steam que usa Steamcito).
 - 🔥 **Ofertas destacadas**: `/ofertas` o todos los días en el canal que elijas, con precio en pesos.
-- 🔔 **Deseados**: cada uno arma su lista con `/deseado` y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
+- 🔔 **Deseados**: cada uno arma su lista con `/deseado` o con el botón **Avisame si baja** de cada tarjeta, y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
 - 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
 - 💸 **Precio en pesos** con los impuestos vigentes, según el medio de pago.
