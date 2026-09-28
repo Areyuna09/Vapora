@@ -24,5 +24,8 @@ EXCHANGE_RATE_TTL_SECONDS = int(_float_env("EXCHANGE_RATE_TTL_SECONDS", 30 * 60)
 # Hora (Argentina) a la que se publican las ofertas destacadas del día.
 DEALS_HOUR = int(_float_env("DEALS_HOUR", 12))
 
-# Archivo con los canales elegidos con /config y los avisos ya enviados.
+# Base de datos SQLite con los canales de /config, los avisos enviados y los deseados.
+DATABASE_FILE = os.getenv("DATABASE_FILE", "data/vapora.db")
+
+# JSON que se usaba antes de la base de datos: si existe, se importa una vez y se renombra.
 STATE_FILE = os.getenv("STATE_FILE", "data/state.json")

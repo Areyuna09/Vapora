@@ -1,6 +1,5 @@
 import asyncio
 
-import config
 import storage
 import wishlist
 from wishlist import offer_action, resolve_game
@@ -44,8 +43,7 @@ def test_resolve_game_from_id_link_and_name(monkeypatch):
     assert asyncio.run(resolve_game("juego que no existe")) is None
 
 
-def test_wishlist_storage(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "STATE_FILE", str(tmp_path / "state.json"))
+def test_wishlist_storage():
     assert storage.add_wish(1, 367520, "Hollow Knight", 99)
     assert not storage.add_wish(1, 367520, "Hollow Knight", 99)  # repetido
     storage.set_wish_notified(1, 367520, 249)
@@ -55,8 +53,7 @@ def test_wishlist_storage(tmp_path, monkeypatch):
     assert storage.all_wishlists() == {}
 
 
-def test_wishlist_limit(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "STATE_FILE", str(tmp_path / "state.json"))
+def test_wishlist_limit():
     for app_id in range(storage.MAX_WISHLIST):
         assert storage.add_wish(1, app_id, f"Juego {app_id}", None)
     assert not storage.add_wish(1, 999, "Uno más", None)

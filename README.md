@@ -99,7 +99,7 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 
 <sub>* Quienes tengan el permiso **Gestionar servidor**. Se puede cambiar en Ajustes del servidor → Integraciones → Vapora.</sub>
 
-Cada servidor elige sus propios canales. Se guardan en `data/state.json` junto con los avisos ya enviados y las listas de deseados.
+Cada servidor elige sus propios canales. Se guardan en una base **SQLite** (`data/vapora.db`) junto con los avisos ya enviados y las listas de deseados.
 
 Los deseados se revisan cada hora. Vapora avisa **una vez por oferta** (y otra si el precio baja más) en el canal elegido con `/config canal` → *Avisos de deseados*, mencionando a cada persona. Si el servidor no eligió canal, avisa por MD.
 
@@ -117,6 +117,18 @@ Todo se configura en el archivo `.env` (ver [`.env.example`](.env.example)):
 
 > [!TIP]
 > Las fechas de las rebajas están en [`sales.py`](sales.py), copiadas del [calendario oficial de Steamworks](https://partner.steamgames.com/doc/marketing/upcoming_events). Valve no las publica en una API, así que hay que actualizarlas a mano una o dos veces por año.
+
+## 🗄️ Base de datos
+
+Vapora usa **SQLite** (viene con Python, no hay que instalar nada). En Railway, la base vive en el volumen montado en `/app/data`.
+
+| Tabla | Qué guarda |
+|---|---|
+| `guild_channels` | Canal elegido con `/config` para cada tipo de aviso de cada servidor |
+| `sent_announcements` | Avisos de rebajas ya enviados, para no repetirlos |
+| `wishlist` | Deseados de cada persona y a qué precio se avisó la última oferta |
+
+La estructura se actualiza sola al arrancar (`PRAGMA user_version`). Si existe el `data/state.json` de versiones anteriores, se importa una vez y se renombra a `state.json.migrado`.
 
 ## 🧪 Tests
 
@@ -144,7 +156,7 @@ journalctl -u vapora -f     # ver logs
 ├── prices.py           # Cotizaciones y conversión a pesos
 ├── sales.py            # Calendario de rebajas de Steam
 ├── wishlist.py         # Deseados: cuándo avisar de una oferta
-├── storage.py          # Canales, avisos enviados y deseados (JSON)
+├── storage.py          # Base de datos SQLite: canales, avisos enviados y deseados
 ├── announcements.py    # Tarjetas de ofertas y avisos de rebajas
 ├── formatting.py       # Formato de precios (USD y pesos)
 ├── config.py           # Impuestos y parámetros configurables

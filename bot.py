@@ -197,12 +197,11 @@ async def check_sale_announcements() -> None:
         channel = resolve_channel(channel_id)
         if channel is None:
             continue
-        prefix = f"{guild_id}:"
-        sent = {key.removeprefix(prefix) for key in storage.sent_announcements() if key.startswith(prefix)}
+        sent = storage.sent_announcements(guild_id)
         for sale, kind in due_announcements(now, sent, sales):
             try:
                 await channel.send(embed=build_sale_embed(sale, kind))
-                storage.mark_sent(f"{prefix}{sale.key}:{kind}")
+                storage.mark_sent(guild_id, sale.key, kind)
                 logging.info("Aviso de rebajas enviado en #%s: %s (%s)", channel, sale.name, kind)
             except discord.HTTPException:
                 logging.exception("No se pudo enviar el aviso de %s (%s) en #%s", sale.name, kind, channel)
