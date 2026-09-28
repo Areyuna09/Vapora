@@ -58,7 +58,7 @@ def test_build_embed_fields():
         "genres": [{"description": "Acción"}],
     })
     data["reviews"] = {"description": "Muy positivas", "total": 100, "positive_percent": 85}
-    embed = build_embed(1888930, data)
+    embed = build_embed(data)
     names = [f.name for f in embed.fields]
     assert names == ["💵 Precio Steam (AR)", "⭐ Reseñas", "📅 Lanzamiento"]
     assert embed.description.endswith("🎭 Acción")

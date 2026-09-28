@@ -37,7 +37,10 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- 🔗 **Detección automática**: sin comandos. Soporta varios links en el mismo mensaje.
+- 🔗 **Detección automática**: sin comandos. Juegos, DLC, paquetes (`/sub/`) y bundles, varios por mensaje.
+- 🧉 **Juegos argentinos**: los destaca en la tarjeta (lista del curador de Steam que usa Steamcito).
+- 🔥 **Ofertas destacadas**: `/ofertas` o todos los días en el canal que elijas, con precio en pesos.
+- 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
 - 💸 **Precio en pesos** con los impuestos vigentes, según el medio de pago.
 - ⚡ **Caché**: los datos de Steam se guardan 1 hora y la cotización 30 minutos.
@@ -80,6 +83,20 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 | Enviar mensajes · Insertar enlaces | Responder con la tarjeta |
 | Gestionar mensajes | Ocultar el preview original de Discord (opcional) |
 
+## 💬 Comandos
+
+| Comando | Qué hace | Quién |
+|---|---|---|
+| `/ofertas` | Ofertas destacadas de Steam con precio en pesos | Todos |
+| `/rebajas` | Rebaja actual y próximas, con cuenta regresiva | Todos |
+| `/config canal` | Elegir el canal de las ofertas diarias o de los avisos de rebajas | Admins* |
+| `/config desactivar` | Dejar de publicar ofertas o avisos | Admins* |
+| `/config ver` | Ver la configuración del servidor | Admins* |
+
+<sub>* Quienes tengan el permiso **Gestionar servidor**. Se puede cambiar en Ajustes del servidor → Integraciones → Vapora.</sub>
+
+Cada servidor elige sus propios canales. Se guardan en `data/state.json` junto con los avisos ya enviados, para no repetirlos al reiniciar.
+
 ## ⚙️ Configuración
 
 Todo se configura en el archivo `.env` (ver [`.env.example`](.env.example)):
@@ -90,6 +107,10 @@ Todo se configura en el archivo `.env` (ver [`.env.example`](.env.example)):
 | `IVA_PERCENT` | `21` | IVA sobre servicios digitales |
 | `PROVINCE_TAX_PERCENT` | `0` | Ingresos Brutos de tu provincia (ej. `2` en CABA/PBA) |
 | `EXCHANGE_RATE_TTL_SECONDS` | `1800` | Cada cuánto se actualiza la cotización |
+| `DEALS_HOUR` | `12` | Hora de Argentina a la que se publican las ofertas del día |
+
+> [!TIP]
+> Las fechas de las rebajas están en [`sales.py`](sales.py), copiadas del [calendario oficial de Steamworks](https://partner.steamgames.com/doc/marketing/upcoming_events). Valve no las publica en una API, así que hay que actualizarlas a mano una o dos veces por año.
 
 ## 🧪 Tests
 
@@ -115,6 +136,9 @@ journalctl -u vapora -f     # ver logs
 ├── bot.py              # Bot de Discord: eventos y armado de la tarjeta
 ├── steam.py            # Consultas a la tienda y reseñas de Steam
 ├── prices.py           # Cotizaciones y conversión a pesos
+├── sales.py            # Calendario de rebajas de Steam
+├── announcements.py    # Tarjetas de ofertas y avisos de rebajas
+├── formatting.py       # Formato de precios (USD y pesos)
 ├── config.py           # Impuestos y parámetros configurables
 ├── deploy/
 │   └── vapora.service  # Servicio systemd para el servidor

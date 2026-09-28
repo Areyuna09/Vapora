@@ -31,3 +31,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ── Datos del bot (avisos enviados) ────────────────
+data/

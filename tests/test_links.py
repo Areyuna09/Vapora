@@ -1,9 +1,9 @@
-from steam import extract_app_ids, parse_app_data
+from steam import extract_steam_items, parse_app_data, store_url
 
 
 def test_single_link():
     text = "Miren https://store.steampowered.com/app/1888930/The_Last_of_Us_Parte_I/"
-    assert extract_app_ids(text) == [1888930]
+    assert extract_steam_items(text) == [("app", 1888930)]
 
 
 def test_multiple_links():
@@ -11,7 +11,7 @@ def test_multiple_links():
         "https://store.steampowered.com/app/1888930/foo "
         "https://store.steampowered.com/app/730/CounterStrike_2/"
     )
-    assert extract_app_ids(text) == [1888930, 730]
+    assert extract_steam_items(text) == [("app", 1888930), ("app", 730)]
 
 
 def test_duplicate_links():
@@ -19,15 +19,33 @@ def test_duplicate_links():
         "https://store.steampowered.com/app/730/foo "
         "https://store.steampowered.com/app/730/bar"
     )
-    assert extract_app_ids(text) == [730]
+    assert extract_steam_items(text) == [("app", 730)]
 
 
 def test_link_without_trailing_slash():
-    assert extract_app_ids("https://store.steampowered.com/app/730") == [730]
+    assert extract_steam_items("https://store.steampowered.com/app/730") == [("app", 730)]
 
 
 def test_no_links():
-    assert extract_app_ids("hola, nada por acá") == []
+    assert extract_steam_items("hola, nada por acá") == []
+
+
+def test_bundle_and_sub_links():
+    text = (
+        "https://store.steampowered.com/bundle/232/Valve_Complete_Pack/ "
+        "https://store.steampowered.com/sub/469/ "
+        "https://store.steampowered.com/app/730/"
+    )
+    assert extract_steam_items(text) == [("bundle", 232), ("sub", 469), ("app", 730)]
+
+
+def test_same_id_different_kind_is_not_duplicate():
+    text = "https://store.steampowered.com/app/232/ https://store.steampowered.com/bundle/232/"
+    assert extract_steam_items(text) == [("app", 232), ("bundle", 232)]
+
+
+def test_store_url():
+    assert store_url("bundle", 232) == "https://store.steampowered.com/bundle/232/"
 
 
 def test_parse_discounted_price():

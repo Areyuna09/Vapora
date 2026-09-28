@@ -1,3 +1,4 @@
 discord.py>=2.6,<3
 aiohttp>=3.10,<4
 python-dotenv>=1.0,<2
+tzdata>=2024.1  # zonas horarias en Windows (rebajas de Steam en hora del Pacífico)

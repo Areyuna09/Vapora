@@ -44,7 +44,7 @@ def test_format_ars():
 
 def _embed_for(data_overrides, rates):
     data = parse_app_data(1, {"name": "Juego", **data_overrides})
-    return build_embed(1, data, rates)
+    return build_embed(data, rates)
 
 
 def test_embed_shows_ars_prices():

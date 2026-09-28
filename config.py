@@ -20,3 +20,9 @@ PROVINCE_TAX_PERCENT = _float_env("PROVINCE_TAX_PERCENT", 0.0)
 
 # Cada cuánto se actualizan las cotizaciones del dólar.
 EXCHANGE_RATE_TTL_SECONDS = int(_float_env("EXCHANGE_RATE_TTL_SECONDS", 30 * 60))
+
+# Hora (Argentina) a la que se publican las ofertas destacadas del día.
+DEALS_HOUR = int(_float_env("DEALS_HOUR", 12))
+
+# Archivo con los canales elegidos con /config y los avisos ya enviados.
+STATE_FILE = os.getenv("STATE_FILE", "data/state.json")
