@@ -53,7 +53,10 @@ class SteamPriceBot(commands.Bot):
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = SteamPriceBot(command_prefix="!", intents=intents)
+# Estado que se ve debajo del nombre en la lista de miembros.
+STATUS_TEXT = "Precios de Steam 🇦🇷"
+
+bot = SteamPriceBot(command_prefix="!", intents=intents, activity=discord.CustomActivity(name=STATUS_TEXT))
 
 
 # ── Tarjeta de un juego / DLC / paquete / bundle ─────────────────────────────
