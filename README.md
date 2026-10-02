@@ -7,7 +7,9 @@
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)
 ![Steam](https://img.shields.io/badge/Steam-Store%20API-171A21?logo=steam&logoColor=white)
-![Hosting](https://img.shields.io/badge/Oracle%20Cloud-Always%20Free-F80000?logo=oracle&logoColor=white)
+![Railway](https://img.shields.io/badge/Deploy-Railway-0B0D0E?logo=railway&logoColor=white)
+![Ruff](https://img.shields.io/badge/code%20style-ruff-D7FF64?logo=ruff&logoColor=black)
+![mypy](https://img.shields.io/badge/types-mypy%20strict-2A6DB2)
 
 </div>
 
@@ -38,11 +40,12 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 ```
 
 - 🔗 **Detección automática**: sin comandos. Juegos, DLC, paquetes (`/sub/`) y bundles, varios por mensaje.
-- 🧉 **Juegos argentinos**: los destaca en la tarjeta (lista del curador de Steam que usa Steamcito).
+- 🧉 **Juegos argentinos**: los destaca en la tarjeta (lista del curador de Steam [Videojuegos Argentinos](https://store.steampowered.com/curator/45013169/)).
 - 🔥 **Ofertas destacadas**: `/ofertas` o todos los días en el canal que elijas, con precio en pesos.
 - 🔔 **Deseados**: cada uno arma su lista con `/deseado` o con el botón **Avisame si baja** de cada tarjeta, y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
 - 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
+- 🎨 **Color de temporada**: durante una rebaja de Steam, las tarjetas toman su color (naranja en otoño, celeste hielo en invierno, rosa en primavera y amarillo en verano).
 - 💸 **Precio en pesos** con los impuestos vigentes, según el medio de pago.
 - ⚡ **Caché**: los datos de Steam se guardan 1 hora y la cotización 30 minutos.
 
@@ -54,13 +57,13 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 | 🟣 **ARQ** | USD × dólar cripto | [dolarapi.com](https://dolarapi.com) |
 
 > [!NOTE]
-> Desde abril de 2025 **no** se cobra la percepción de Ganancias del 30% a las plataformas de videojuegos, y el Impuesto PAIS se derogó en diciembre de 2024. El cálculo coincide con el de [Steamcito](https://steamcito.com.ar).
+> Desde abril de 2025 **no** se cobra la percepción de Ganancias del 30% a las plataformas de videojuegos, y el Impuesto PAIS se derogó en diciembre de 2024.
 
 Steam cobra en **USD** para la región LATAM, así que Vapora toma el precio en dólares de la API de Steam (`cc=ar`) y lo convierte.
 
 ## 🚀 Instalación local
 
-**Requisitos:** Python 3.11 o superior y un bot creado en el [Discord Developer Portal](https://discord.com/developers/applications) con **Message Content Intent** activado.
+**Requisitos:** Python 3.11 o superior (el proyecto usa 3.12) y un bot creado en el [Discord Developer Portal](https://discord.com/developers/applications) con **Message Content Intent** activado.
 
 ```powershell
 git clone https://github.com/<tu-usuario>/vapora.git
@@ -115,8 +118,10 @@ Todo se configura en el archivo `.env` (ver [`.env.example`](.env.example)):
 | `EXCHANGE_RATE_TTL_SECONDS` | `1800` | Cada cuánto se actualiza la cotización |
 | `DEALS_HOUR` | `12` | Hora de Argentina a la que se publican las ofertas del día |
 
+| `DATABASE_FILE` | `data/vapora.db` | Archivo de la base de datos SQLite |
+
 > [!TIP]
-> Las fechas de las rebajas están en [`sales.py`](sales.py), copiadas del [calendario oficial de Steamworks](https://partner.steamgames.com/doc/marketing/upcoming_events). Valve no las publica en una API, así que hay que actualizarlas a mano una o dos veces por año.
+> Las fechas de las rebajas se leen una vez por día del [calendario oficial de Steamworks](https://partner.steamgames.com/doc/marketing/upcoming_events). Valve no las publica en una API, así que Vapora interpreta esa página; si el formato cambia, usa la lista de respaldo de [`vapora/sales.py`](vapora/sales.py) y lo avisa en los logs.
 
 ## 🗄️ Base de datos
 
@@ -130,40 +135,66 @@ Vapora usa **SQLite** (viene con Python, no hay que instalar nada). En Railway, 
 
 La estructura se actualiza sola al arrancar (`PRAGMA user_version`). Si existe el `data/state.json` de versiones anteriores, se importa una vez y se renombra a `state.json.migrado`.
 
-## 🧪 Tests
+## 🧪 Calidad del código
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest
+ruff check .          # linter
+ruff format --check . # formato
+mypy                  # tipos (modo estricto)
+pytest                # tests
 ```
+
+Conviene correr los cuatro antes de cada push: Railway despliega lo que se sube a `main`.
+
+Los tests no usan la red ni Discord: Steam, DolarAPI y las interacciones se reemplazan por dobles de prueba (`tests/helpers.py` y `tests/fakes.py`), y la base de datos es una SQLite temporal por test.
 
 ## 🖥️ Deploy 24/7
 
-Vapora corre en una VM **Always Free** de Oracle Cloud como servicio `systemd`, que la arranca con el sistema y la reinicia si se cae. El archivo del servicio está en [`deploy/vapora.service`](deploy/vapora.service).
+Vapora corre en [Railway](https://railway.com), que la redeploya sola con cada push a `main`.
 
-```bash
-sudo cp deploy/vapora.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now vapora
-journalctl -u vapora -f     # ver logs
-```
+| Ajuste del servicio | Valor |
+|---|---|
+| Start command | `python bot.py` |
+| Variables | `DISCORD_TOKEN` (y las opcionales de arriba) |
+| Volumen | montado en `/app/data`, para que la base de datos sobreviva a los redeploys |
+
+La versión de Python se fija en [`.python-version`](.python-version).
 
 ## 📁 Estructura
 
 ```
-├── bot.py              # Bot de Discord: eventos y armado de la tarjeta
-├── steam.py            # Consultas a la tienda y reseñas de Steam
-├── prices.py           # Cotizaciones y conversión a pesos
-├── sales.py            # Calendario de rebajas de Steam
-├── wishlist.py         # Deseados: cuándo avisar de una oferta
-├── storage.py          # Base de datos SQLite: canales, avisos enviados y deseados
-├── announcements.py    # Tarjetas de ofertas y avisos de rebajas
-├── formatting.py       # Formato de precios (USD y pesos)
-├── config.py           # Impuestos y parámetros configurables
-├── deploy/
-│   └── vapora.service  # Servicio systemd para el servidor
-└── tests/              # Tests con pytest
+├── bot.py                  # Punto de entrada (python bot.py)
+├── vapora/
+│   ├── bot.py              # VaporaBot: crea los servicios y registra los cogs
+│   ├── config.py           # Settings: configuración leída del entorno
+│   ├── cache.py            # Cachés en memoria con vencimiento
+│   ├── pricing.py          # Cotizaciones del dólar y conversión a pesos
+│   ├── sales.py            # Calendario de rebajas y cuándo avisarlas
+│   ├── wishlist.py         # Reglas de los deseados: cuándo avisar una oferta
+│   ├── storage.py          # Base de datos SQLite
+│   ├── events.py           # Eventos internos entre cogs
+│   ├── steam/              # Tienda de Steam
+│   │   ├── models.py       #   modelos (StoreItem, Price, Deal…)
+│   │   ├── links.py        #   detección de links en un mensaje
+│   │   ├── parsers.py      #   respuestas de Steam → modelos (funciones puras)
+│   │   └── client.py       #   SteamClient: pedidos y caché
+│   ├── ui/                 # Lo que se ve en Discord
+│   │   ├── game_card.py    #   tarjeta de un juego
+│   │   ├── announcements.py#   ofertas y avisos de rebajas
+│   │   ├── panels.py       #   /ayuda, /config y /deseado
+│   │   ├── buttons.py      #   botones de las tarjetas
+│   │   └── formatting.py   #   formato de precios
+│   └── cogs/               # Comandos, eventos y tareas, por función
+│       ├── links.py        #   responde a los links de Steam
+│       ├── deals.py        #   /ofertas, /rebajas y sus publicaciones
+│       ├── wishlist.py     #   /deseado y avisos de ofertas
+│       ├── settings.py     #   /config
+│       └── general.py      #   /ayuda
+└── tests/                  # Tests con pytest
 ```
+
+Las dependencias van en una sola dirección: los **cogs** usan la **UI** y los **servicios** (`steam`, `pricing`, `sales`, `storage`), y estos no saben nada de Discord. Por eso la lógica se puede probar sin conectarse.
 
 ## 🔒 Seguridad
 
@@ -172,5 +203,5 @@ El token **nunca** se sube al repositorio: vive solo en `.env`, que está en el 
 ---
 
 <div align="center">
-<sub>Hecho con 🧉 en Argentina · Datos de Steam, <a href="https://dolarapi.com">DolarAPI</a> e ideas de <a href="https://steamcito.com.ar">Steamcito</a></sub>
+<sub>Datos de Steam y <a href="https://dolarapi.com">DolarAPI</a></sub>
 </div>

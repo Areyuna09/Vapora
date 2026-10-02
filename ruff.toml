@@ -1,0 +1,28 @@
+# Linter y formateador: `ruff check .` y `ruff format .`
+line-length = 110
+target-version = "py311"
+
+[lint]
+select = [
+    "E", "W",  # estilo (pycodestyle)
+    "F",       # errores de lógica: imports sin usar, variables indefinidas
+    "I",       # orden de imports
+    "N",       # nombres
+    "UP",      # sintaxis moderna de Python
+    "B",       # bugs frecuentes
+    "C4",      # comprensiones
+    "SIM",     # simplificaciones
+    "RET",     # returns innecesarios
+    "PTH",     # pathlib en lugar de os.path
+    "ASYNC",   # errores típicos de código asíncrono
+    "RUF",     # reglas propias de ruff
+]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # los textos del bot usan signos y letras en español a propósito
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["N802"]
+
+[lint.isort]
+known-first-party = ["vapora"]

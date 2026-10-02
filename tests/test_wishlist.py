@@ -1,59 +1,74 @@
-import asyncio
+from vapora.steam import Price, SearchResult
+from vapora.wishlist import OfferAction, offer_action, resolve_app_id
 
-import storage
-import wishlist
-from wishlist import offer_action, resolve_game
-
-ON_SALE = {"discount_percent": 50, "final_cents": 1000}
-CHEAPER = {"discount_percent": 70, "final_cents": 600}
-FULL_PRICE = {"discount_percent": 0, "final_cents": 2000}
+ON_SALE = Price(1000, 2000, 50, "USD")
+CHEAPER = Price(600, 2000, 70, "USD")
+FULL_PRICE = Price(2000, 2000, 0, "USD")
 
 
-def test_notifies_when_sale_starts():
-    assert offer_action(None, ON_SALE) == ("notify", 1000)
+# ── Cuándo avisar ─────────────────────────────────────────────────────────────
 
 
-def test_does_not_repeat_same_sale():
+def test_notifies_when_a_sale_starts():
+    assert offer_action(None, ON_SALE) is OfferAction.NOTIFY
+
+
+def test_does_not_repeat_the_same_sale():
     assert offer_action(1000, ON_SALE) is None
 
 
-def test_notifies_again_if_price_drops_further():
-    assert offer_action(1000, CHEAPER) == ("notify", 600)
+def test_notifies_again_if_the_price_drops_further():
+    assert offer_action(1000, CHEAPER) is OfferAction.NOTIFY
 
 
-def test_resets_when_sale_ends_so_next_one_is_notified():
-    assert offer_action(1000, FULL_PRICE) == ("reset", None)
+def test_does_not_notify_if_the_discount_shrinks():
+    assert offer_action(600, ON_SALE) is None
+
+
+def test_resets_when_the_sale_ends_so_the_next_one_is_notified():
+    assert offer_action(1000, FULL_PRICE) is OfferAction.RESET
     assert offer_action(None, FULL_PRICE) is None
-    assert offer_action(None, ON_SALE) == ("notify", 1000)
+    assert offer_action(None, ON_SALE) is OfferAction.NOTIFY
 
 
-def test_free_or_unpriced_games_never_notify():
-    assert offer_action(None, {"is_free": True}) is None
-    assert offer_action(None, {"discount_percent": 0, "final_cents": None}) is None
+def test_games_without_price_never_notify():
+    assert offer_action(None, None) is None
+    assert offer_action(1000, None) is OfferAction.RESET  # dejó de tener precio: se olvida el aviso
 
 
-def test_resolve_game_from_id_link_and_name(monkeypatch):
-    async def fake_search(term, limit=10):
-        return [{"id": 367520, "name": "Hollow Knight"}] if "hollow" in term.lower() else []
-    monkeypatch.setattr(wishlist, "search_store", fake_search)
-
-    assert asyncio.run(resolve_game("367520")) == (367520, None)
-    assert asyncio.run(resolve_game("https://store.steampowered.com/app/1030300/Silksong/")) == (1030300, None)
-    assert asyncio.run(resolve_game("hollow knight")) == (367520, "Hollow Knight")
-    assert asyncio.run(resolve_game("juego que no existe")) is None
+# ── Qué juego eligió el usuario ───────────────────────────────────────────────
 
 
-def test_wishlist_storage():
-    assert storage.add_wish(1, 367520, "Hollow Knight", 99)
-    assert not storage.add_wish(1, 367520, "Hollow Knight", 99)  # repetido
-    storage.set_wish_notified(1, 367520, 249)
-    assert storage.get_wishlist(1) == {367520: {"name": "Hollow Knight", "guild_id": 99, "notified_final": 249}}
-    assert storage.remove_wish(1, 367520) == "Hollow Knight"
-    assert storage.remove_wish(1, 367520) is None
-    assert storage.all_wishlists() == {}
+class FakeSteam:
+    def __init__(self) -> None:
+        self.searches: list[str] = []
+
+    async def search(self, term: str, *, limit: int = 10) -> list[SearchResult]:
+        self.searches.append(term)
+        return [SearchResult(367520, "Hollow Knight")] if "hollow" in term.lower() else []
 
 
-def test_wishlist_limit():
-    for app_id in range(storage.MAX_WISHLIST):
-        assert storage.add_wish(1, app_id, f"Juego {app_id}", None)
-    assert not storage.add_wish(1, 999, "Uno más", None)
+async def test_autocomplete_choice_is_already_an_app_id():
+    steam = FakeSteam()
+    assert await resolve_app_id(" 367520 ", steam) == 367520  # type: ignore[arg-type]
+    assert steam.searches == []
+
+
+async def test_store_link():
+    steam = FakeSteam()
+    link = "https://store.steampowered.com/app/1030300/Silksong/"
+    assert await resolve_app_id(link, steam) == 1030300  # type: ignore[arg-type]
+    assert steam.searches == []
+
+
+async def test_name_takes_first_search_result():
+    assert await resolve_app_id("hollow knight", FakeSteam()) == 367520  # type: ignore[arg-type]
+
+
+async def test_unknown_name():
+    assert await resolve_app_id("juego que no existe", FakeSteam()) is None  # type: ignore[arg-type]
+
+
+async def test_bundle_link_is_not_a_game():
+    link = "https://store.steampowered.com/bundle/232/"
+    assert await resolve_app_id(link, FakeSteam()) is None  # type: ignore[arg-type]

@@ -16,8 +16,10 @@ dist/
 venv/
 env/
 
-# ── Tests y cobertura ────────────────────────────────
+# ── Tests, linter y tipos ────────────────────────────
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
 
@@ -32,5 +34,5 @@ htmlcov/
 Thumbs.db
 desktop.ini
 
-# ── Datos del bot (avisos enviados) ────────────────
+# ── Datos del bot (base de datos SQLite) ─────────────
 data/
