@@ -1,9 +1,12 @@
+import asyncio
 import json
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 import pytest
 
+from vapora import storage as storage_module
 from vapora.storage import MAX_WISHLIST_SIZE, MIGRATIONS, AddWishResult, Database, Feature, Wish
 
 # ── Canales de /config ────────────────────────────────────────────────────────
@@ -166,3 +169,78 @@ async def test_existing_database_does_not_reimport_legacy_json(tmp_path: Path):
     reopened = Database(tmp_path / "vapora.db", tmp_path / "state.json")
     assert await reopened.channels(10) == {}
     assert (tmp_path / "state.json").exists()
+
+
+async def test_version_1_database_is_upgraded_keeping_its_data(tmp_path: Path):
+    """Así está la base en producción antes de este cambio: solo la primera migración."""
+    path = tmp_path / "vapora.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript(MIGRATIONS[0])
+        conn.execute("PRAGMA user_version = 1")
+        conn.execute("INSERT INTO guild_channels (guild_id, feature, channel_id) VALUES (10, 'ofertas', 100)")
+        conn.execute("INSERT INTO wishlist (user_id, app_id, name) VALUES (5, 367520, 'Hollow Knight')")
+    conn.close()
+
+    database = Database(path, tmp_path / "state.json")
+    assert await database.channels(10) == {Feature.DEALS: 100}
+    assert await database.wishlist(5) == [Wish(5, 367520, "Hollow Knight", None, None)]
+    assert await database.guilds_posted_on(Feature.DEALS, date(2026, 10, 5)) == set()
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
+    conn.close()
+
+
+async def test_failed_migration_leaves_the_database_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Si una migración falla a la mitad, no queda aplicada a medias ni se pierden datos."""
+    path = tmp_path / "vapora.db"
+    await Database(path).set_channel(10, Feature.DEALS, 100)
+    broken = "CREATE TABLE a_medias (x INTEGER); DROP TABLE guild_channels; ESTO NO ES SQL;"
+    monkeypatch.setattr(storage_module, "MIGRATIONS", (*MIGRATIONS, broken))
+
+    with pytest.raises(sqlite3.OperationalError):
+        await Database(path).setup()
+
+    monkeypatch.setattr(storage_module, "MIGRATIONS", MIGRATIONS)
+    assert await Database(path).channels(10) == {Feature.DEALS: 100}
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
+        assert not conn.execute("SELECT name FROM sqlite_master WHERE name = 'a_medias'").fetchall()
+    conn.close()
+
+
+async def test_unknown_channel_types_are_ignored(db: Database, tmp_path: Path):
+    """Por si se vuelve a una versión anterior del bot con canales de tipos más nuevos."""
+    await db.set_channel(10, Feature.DEALS, 100)
+    with sqlite3.connect(tmp_path / "vapora.db") as conn:
+        conn.execute("PRAGMA ignore_check_constraints = ON")
+        conn.execute("INSERT INTO guild_channels (guild_id, feature, channel_id) VALUES (10, 'futuro', 200)")
+    conn.close()
+    assert await db.channels(10) == {Feature.DEALS: 100}
+
+
+# ── Publicaciones diarias ─────────────────────────────────────────────────────
+
+
+async def test_daily_posts_are_tracked_per_guild_feature_and_day(db: Database):
+    today, tomorrow = date(2026, 10, 5), date(2026, 10, 6)
+    await db.mark_posted(10, Feature.DEALS, today)
+    await db.mark_posted(11, Feature.DEALS, today)
+    await db.mark_posted(10, Feature.SALES, today)
+    assert await db.guilds_posted_on(Feature.DEALS, today) == {10, 11}
+    await db.mark_posted(10, Feature.DEALS, tomorrow)
+    assert await db.guilds_posted_on(Feature.DEALS, today) == {11}
+    assert await db.guilds_posted_on(Feature.DEALS, tomorrow) == {10}
+    assert await db.guilds_posted_on(Feature.SALES, today) == {10}  # cada tipo por separado
+
+
+# ── Límite de deseados con pedidos simultáneos ────────────────────────────────
+
+
+async def test_wishlist_limit_holds_with_simultaneous_adds(db: Database):
+    for app_id in range(MAX_WISHLIST_SIZE - 1):
+        await db.add_wish(5, app_id, f"Juego {app_id}", None)
+    results = await asyncio.gather(*(db.add_wish(5, 1000 + n, f"Extra {n}", None) for n in range(5)))
+    assert results.count(AddWishResult.ADDED) == 1
+    assert len(await db.wishlist(5)) == MAX_WISHLIST_SIZE

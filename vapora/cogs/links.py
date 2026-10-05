@@ -37,11 +37,17 @@ class LinksCog(commands.Cog):
 
         converter = await self.bot.peso_converter()
         sale = await self.bot.current_sale()
-        await message.reply(
-            embeds=[build_game_card(item, converter, sale) for item in items],
-            view=build_card_buttons(items),
-            mention_author=False,
-        )
+        try:
+            await message.reply(
+                embeds=[build_game_card(item, converter, sale) for item in items],
+                view=build_card_buttons(items),
+                mention_author=False,
+            )
+        except discord.HTTPException:
+            # Sin permiso para escribir en ese canal, por ejemplo: no se oculta el preview
+            # original, así el link no queda sin ninguna tarjeta.
+            log.warning("No pude responder al link en #%s", message.channel, exc_info=True)
+            return
         await self._hide_link_preview(message)
 
     async def _fetch_items(self, refs: list[ItemRef]) -> list[StoreItem]:

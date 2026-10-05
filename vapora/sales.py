@@ -210,6 +210,8 @@ class SalesCalendar:
         self._sales: RefreshingValue[Sequence[SteamSale]] = RefreshingValue(
             CALENDAR_TTL_SECONDS, FALLBACK_SALES
         )
+        self._read_from_steamworks = False
+        self._warned_fallback_expired = False
 
     async def sales(self) -> Sequence[SteamSale]:
         return await self._sales.get(self._fetch)
@@ -221,9 +223,24 @@ class SalesCalendar:
                 parsed = parse_steamworks_events(await response.text())
         except (aiohttp.ClientError, TimeoutError):
             log.warning("No se pudo leer el calendario de Steamworks", exc_info=True)
+            self._check_fallback()
             return None
         if not parsed:
             log.warning("No pude leer fechas en la página de Steamworks: ¿cambió el formato?")
+            self._check_fallback()
             return None
         log.info("Calendario de rebajas actualizado desde Steamworks: %d eventos", len(parsed))
+        self._read_from_steamworks = True
         return parsed
+
+    def _check_fallback(self) -> None:
+        """Avisa (una vez) si se está usando el respaldo y ya no le quedan fechas por venir."""
+        if self._read_from_steamworks or self._warned_fallback_expired:
+            return
+        now = datetime.now(PACIFIC)
+        if all(sale.end <= now for sale in FALLBACK_SALES):
+            log.error(
+                "El calendario de respaldo (FALLBACK_SALES) ya no tiene rebajas futuras y no se "
+                "pudo leer Steamworks: no habrá avisos de rebajas hasta actualizarlo."
+            )
+            self._warned_fallback_expired = True

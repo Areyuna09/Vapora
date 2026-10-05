@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 
 import discord
@@ -169,3 +170,78 @@ async def test_unexpected_error_does_not_stop_a_periodic_task():
 
     await task("cog")  # no propaga: discord.ext.tasks detendría el loop para siempre
     assert calls == ["cog"]
+
+
+# ── Ofertas diarias: sin repetir y con recuperación tras un reinicio ──────────
+
+
+async def test_daily_deals_are_posted_once_per_day(bot: FakeBot, db: Database, before_sale: datetime):
+    await db.set_channel(GUILD, Feature.DEALS, CHANNEL)
+    channel = bot.add_channel(CHANNEL)
+    cog = DealsCog(bot)  # type: ignore[arg-type]
+    await cog.post_daily_deals()
+    await cog.post_daily_deals()
+    channel.send.assert_awaited_once()
+    assert await db.guilds_posted_on(Feature.DEALS, before_sale.astimezone(ARGENTINA).date()) == {GUILD}
+
+
+async def test_daily_deals_are_posted_again_the_next_day(
+    bot: FakeBot, db: Database, before_sale: datetime, monkeypatch: pytest.MonkeyPatch
+):
+    await db.set_channel(GUILD, Feature.DEALS, CHANNEL)
+    channel = bot.add_channel(CHANNEL)
+    cog = DealsCog(bot)  # type: ignore[arg-type]
+    await cog.post_daily_deals()
+    monkeypatch.setattr(deals_module, "_now", lambda: before_sale + timedelta(days=1))
+    await cog.post_daily_deals()
+    assert channel.send.await_count == 2
+
+
+async def test_failed_daily_deals_are_not_marked_as_posted(bot: FakeBot, db: Database, before_sale: datetime):
+    await db.set_channel(GUILD, Feature.DEALS, CHANNEL)
+    channel = bot.add_channel(CHANNEL)
+    channel.send.side_effect = discord.HTTPException(type("R", (), {"status": 500, "reason": "x"})(), "falló")
+    await DealsCog(bot).post_daily_deals()  # type: ignore[arg-type]
+    assert await db.guilds_posted_on(Feature.DEALS, before_sale.astimezone(ARGENTINA).date()) == set()
+
+
+@pytest.mark.parametrize(
+    ("hour", "catches_up"),
+    [(11, False), (12, True), (17, True), (18, False)],  # deals_hour=12 y 6 horas de margen
+)
+async def test_catch_up_after_a_restart_only_shortly_after_the_deals_hour(
+    bot: FakeBot, db: Database, monkeypatch: pytest.MonkeyPatch, hour: int, catches_up: bool
+):
+    now = datetime(2026, 9, 28, hour, 30, tzinfo=ARGENTINA)
+    monkeypatch.setattr(deals_module, "_now", lambda: now)
+    await db.set_channel(GUILD, Feature.DEALS, CHANNEL)
+    channel = bot.add_channel(CHANNEL)
+    await DealsCog(bot)._catch_up_daily_deals()  # type: ignore[arg-type]
+    assert channel.send.await_count == (1 if catches_up else 0)
+
+
+async def test_catch_up_does_not_repeat_todays_deals(
+    bot: FakeBot, db: Database, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(deals_module, "_now", lambda: datetime(2026, 9, 28, 13, tzinfo=ARGENTINA))
+    await db.set_channel(GUILD, Feature.DEALS, CHANNEL)
+    channel = bot.add_channel(CHANNEL)
+    cog = DealsCog(bot)  # type: ignore[arg-type]
+    await cog.post_daily_deals()
+    await cog._catch_up_daily_deals()
+    channel.send.assert_awaited_once()
+
+
+async def test_simultaneous_sale_checks_send_the_notice_once(
+    bot: FakeBot, db: Database, before_sale: datetime
+):
+    await db.set_channel(GUILD, Feature.SALES, CHANNEL)
+    channel = bot.add_channel(CHANNEL)
+
+    async def slow_send(**_: object) -> None:  # como Discord: enviar tarda, y ahí se cruzaban
+        await asyncio.sleep(0.05)
+
+    channel.send.side_effect = slow_send
+    cog = DealsCog(bot)  # type: ignore[arg-type]
+    await asyncio.gather(cog.announce_sales(), cog.on_sales_channel_set())  # vuelta periódica + /config
+    channel.send.assert_awaited_once()

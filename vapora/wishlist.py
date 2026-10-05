@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 
 from vapora.steam import ItemKind, Price, SteamClient, extract_item_refs
+from vapora.storage import Wish
+
+# Valor de las opciones del autocompletado. Lleva un prefijo para distinguirlo de lo que
+# escribe el usuario: un juego puede llamarse "1942" y eso no es un AppID.
+_CHOICE_PREFIX = "app:"
+
+
+def choice_value(app_id: int) -> str:
+    return f"{_CHOICE_PREFIX}{app_id}"
+
+
+def parse_choice_value(text: str) -> int | None:
+    """AppID de una opción elegida del autocompletado, o `None` si el texto lo escribió el usuario."""
+    text = text.strip()
+    number = text.removeprefix(_CHOICE_PREFIX)
+    return int(number) if text.startswith(_CHOICE_PREFIX) and number.isdigit() else None
 
 
 class OfferAction(Enum):
@@ -31,14 +48,41 @@ def offer_action(notified_final_cents: int | None, price: Price | None) -> Offer
 async def resolve_app_id(text: str, steam: SteamClient) -> int | None:
     """Convierte lo que escribió el usuario en un AppID.
 
-    Acepta el valor elegido del autocompletado (el AppID), un link de Steam o un nombre
-    (en ese caso toma el primer resultado del buscador de la tienda).
+    Acepta una opción del autocompletado, un link de Steam o un nombre (en ese caso toma
+    el primer resultado del buscador de la tienda). Un número que no coincide con ningún
+    nombre se toma como AppID escrito a mano.
     """
     text = text.strip()
-    if text.isdigit():
-        return int(text)
+    chosen = parse_choice_value(text)
+    if chosen is not None:
+        return chosen
     apps = [ref.id for ref in extract_item_refs(text) if ref.kind is ItemKind.APP]
     if apps:
         return apps[0]
     results = await steam.search(text, limit=1)
-    return results[0].app_id if results else None
+    if results:
+        return results[0].app_id
+    return int(text) if text.isdigit() else None
+
+
+def find_wish(wishes: Sequence[Wish], text: str) -> Wish | None:
+    """El deseado al que se refiere el usuario: una opción del autocompletado o su nombre.
+
+    Si escribió el nombre a mano, primero busca el nombre exacto y si no, uno que lo
+    contenga, siempre que haya uno solo (si hay varios, no adivina). Un número que no
+    coincide con ningún nombre se toma como AppID.
+    """
+    chosen = parse_choice_value(text)
+    if chosen is not None:
+        return next((wish for wish in wishes if wish.app_id == chosen), None)
+    wanted = text.strip().casefold()
+    if not wanted:
+        return None
+    exact = [wish for wish in wishes if wish.name.casefold() == wanted]
+    partial = [wish for wish in wishes if wanted in wish.name.casefold()]
+    matches = exact or partial
+    if len(matches) == 1:
+        return matches[0]
+    if not matches and wanted.isdigit():
+        return next((wish for wish in wishes if wish.app_id == int(wanted)), None)
+    return None

@@ -87,7 +87,7 @@ async def test_add_unknown_game(cog: WishlistCog, db: Database):
 async def test_autocomplete_suggests_store_games(cog: WishlistCog, bot: FakeBot):
     interaction = make_interaction()
     choices = await cog._suggest_store_games(interaction, "hollow")
-    assert [(choice.name, choice.value) for choice in choices] == [("Hollow Knight", "367520")]
+    assert [(choice.name, choice.value) for choice in choices] == [("Hollow Knight", "app:367520")]
     assert await cog._suggest_store_games(interaction, "h") == []  # muy corto
     assert await cog._suggest_store_games(interaction, "https://store.steampowered.com/app/1/") == []
     bot.steam.down = True
@@ -139,7 +139,7 @@ async def test_remove_autocomplete_suggests_only_own_wishes(cog: WishlistCog, db
     await db.add_wish(99, 730, "Counter-Strike 2", GUILD)
     choices = await cog._suggest_own_wishes(make_interaction(USER), "ori")
     assert [(choice.name, choice.value) for choice in choices] == [
-        ("Ori and the Will of the Wisps", "1057090")
+        ("Ori and the Will of the Wisps", "app:1057090")
     ]
     assert len(await cog._suggest_own_wishes(make_interaction(USER), "")) == 2
 
@@ -250,3 +250,76 @@ async def test_each_user_is_notified_about_their_own_wishes(cog: WishlistCog, bo
     await cog.check_prices()
     first.send.assert_awaited_once()
     second.send.assert_awaited_once()
+
+
+# ── Mejoras: botón robusto, quitar por nombre y chequeo en lote ───────────────
+
+
+async def test_wish_button_always_answers_even_on_unexpected_errors(
+    cog: WishlistCog, bot: FakeBot, monkeypatch: pytest.MonkeyPatch
+):
+    async def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("base de datos rota")
+
+    monkeypatch.setattr(bot.db, "add_wish", broken)
+    interaction = make_interaction(USER, GUILD)
+    await cog.on_wish_button(interaction, 367520)  # no propaga: el error se registra
+    assert sent_text(interaction.followup.send) == "😕 Algo salió mal. Probá de nuevo en un rato."
+
+
+async def test_remove_by_typed_name(cog: WishlistCog, db: Database):
+    await db.add_wish(USER, 367520, "Hollow Knight", GUILD)
+    interaction = make_interaction(USER, GUILD)
+    await cog.remove.callback(cog, interaction, "hollow knight")
+    assert sent_text(interaction.response.send_message) == "🗑️ Saqué **Hollow Knight** de tus deseados."
+    assert await db.wishlist(USER) == []
+
+
+async def test_remove_by_autocomplete_choice(cog: WishlistCog, db: Database):
+    await db.add_wish(USER, 367520, "Hollow Knight", GUILD)
+    await cog.remove.callback(cog, make_interaction(USER, GUILD), "app:367520")
+    assert await db.wishlist(USER) == []
+
+
+async def test_add_by_autocomplete_choice(cog: WishlistCog, db: Database):
+    await add(cog, "app:367520")
+    assert [wish.app_id for wish in await db.wishlist(USER)] == [367520]
+
+
+async def test_price_check_asks_all_prices_at_once_and_cards_only_for_sales(
+    cog: WishlistCog, bot: FakeBot, db: Database
+):
+    bot.add_user(5)
+    bot.add_user(6)
+    await db.add_wish(5, 1057090, ORI.name, None)
+    await db.add_wish(6, 1057090, ORI.name, None)
+    await db.add_wish(6, 367520, HOLLOW_KNIGHT.name, None)
+    await cog.check_prices()
+    assert bot.steam.price_requests == [{1057090, 367520}]
+    assert [ref.id for ref in bot.steam.item_requests] == [
+        1057090
+    ]  # una sola vez, solo el que está en oferta
+
+
+async def test_notification_card_shows_the_fresh_price(cog: WishlistCog, bot: FakeBot, db: Database):
+    user = bot.add_user(USER)
+    await db.add_wish(USER, 1057090, ORI.name, GUILD)
+    fresh = make_item(1057090, ORI.name, price_cents=199, initial_cents=2999, discount=93)
+    stale_card = ORI  # lo que tendría el caché de tarjetas
+
+    async def prices(app_ids: object) -> dict:
+        return {1057090: fresh.price}
+
+    bot.steam.prices = prices  # type: ignore[method-assign]
+    assert bot.steam.items[ORI.ref] is stale_card
+    await cog.check_prices()
+    assert "1,99" in sent_kwargs(user.send)["embed"].fields[0].value
+    assert (await db.wishlist(USER))[0].notified_final_cents == 199
+
+
+async def test_games_steam_did_not_report_are_left_untouched(cog: WishlistCog, bot: FakeBot, db: Database):
+    user = bot.add_user(USER)
+    await db.add_wish(USER, 42, "Juego retirado de la tienda", GUILD, notified_final_cents=100)
+    await cog.check_prices()
+    user.send.assert_not_awaited()
+    assert (await db.wishlist(USER))[0].notified_final_cents == 100  # no se olvida el aviso

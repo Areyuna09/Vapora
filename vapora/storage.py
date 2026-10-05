@@ -4,6 +4,8 @@ Tablas:
 - guild_channels: canal elegido con /config para cada tipo de aviso de cada servidor.
 - sent_announcements: avisos de rebajas ya enviados (para no repetirlos al reiniciar).
 - wishlist: deseados de cada usuario y a qué precio se avisó la última oferta.
+- daily_posts: último día en que se hizo cada publicación diaria (como las ofertas destacadas)
+  en cada servidor.
 
 Las consultas de SQLite son bloqueantes, así que cada operación corre en un hilo aparte
 (`asyncio.to_thread`) para no frenar al bot mientras se lee o escribe el disco.
@@ -19,6 +21,7 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TypeVar
@@ -87,6 +90,15 @@ MIGRATIONS: tuple[str, ...] = (
     );
     CREATE INDEX wishlist_by_app ON wishlist (app_id);
     """,
+    # v2: qué día se hizo cada publicación diaria (como las ofertas) en cada servidor.
+    """
+    CREATE TABLE daily_posts (
+        guild_id     INTEGER NOT NULL,
+        feature      TEXT    NOT NULL,
+        last_posted  TEXT    NOT NULL,  -- fecha (Argentina) en formato ISO: 2026-10-05
+        PRIMARY KEY (guild_id, feature)
+    );
+    """,
 )
 
 # Claves que usaba el JSON anterior a la base de datos.
@@ -119,13 +131,18 @@ class Database:
     # ── Canales de /config ────────────────────────────────────────────────────
 
     async def channels(self, guild_id: int) -> dict[Feature, int]:
-        """Canal configurado para cada tipo de aviso de un servidor."""
+        """Canal configurado para cada tipo de aviso de un servidor.
+
+        Ignora los tipos que esta versión no conoce (por ejemplo, si se volvió a una versión
+        anterior del bot después de que alguien configurara un tipo nuevo).
+        """
 
         def query(conn: sqlite3.Connection) -> dict[Feature, int]:
             rows = conn.execute(
                 "SELECT feature, channel_id FROM guild_channels WHERE guild_id = ?", (guild_id,)
             )
-            return {Feature(row["feature"]): row["channel_id"] for row in rows}
+            known = {feature.value for feature in Feature}
+            return {Feature(row["feature"]): row["channel_id"] for row in rows if row["feature"] in known}
 
         return await self._run(query)
 
@@ -180,6 +197,30 @@ class Database:
 
         await self._run(query)
 
+    # ── Publicaciones diarias ─────────────────────────────────────────────────
+
+    async def guilds_posted_on(self, feature: Feature, day: date) -> set[int]:
+        """Servidores donde ya se hizo la publicación diaria de ese tipo, ese día."""
+
+        def query(conn: sqlite3.Connection) -> set[int]:
+            rows = conn.execute(
+                "SELECT guild_id FROM daily_posts WHERE feature = ? AND last_posted = ?",
+                (feature, day.isoformat()),
+            )
+            return {row["guild_id"] for row in rows}
+
+        return await self._run(query)
+
+    async def mark_posted(self, guild_id: int, feature: Feature, day: date) -> None:
+        def query(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "INSERT INTO daily_posts (guild_id, feature, last_posted) VALUES (?, ?, ?) "
+                "ON CONFLICT (guild_id, feature) DO UPDATE SET last_posted = excluded.last_posted",
+                (guild_id, feature, day.isoformat()),
+            )
+
+        await self._run(query)
+
     # ── Deseados ──────────────────────────────────────────────────────────────
 
     async def wishlist(self, user_id: int) -> list[Wish]:
@@ -210,6 +251,9 @@ class Database:
         notified_final_cents: int | None = None,
     ) -> AddWishResult:
         def query(conn: sqlite3.Connection) -> AddWishResult:
+            # Bloquea la escritura desde ahora: si no, dos agregados a la vez podrían contar
+            # la misma cantidad y pasarse juntos del límite.
+            conn.execute("BEGIN IMMEDIATE")
             owned = {
                 row["app_id"]
                 for row in conn.execute("SELECT app_id FROM wishlist WHERE user_id = ?", (user_id,))
@@ -281,9 +325,11 @@ class Database:
                 conn.execute("PRAGMA journal_mode=WAL")  # escrituras más seguras ante cortes
                 version = conn.execute("PRAGMA user_version").fetchone()[0]
                 for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
+                    # executescript no abre una transacción por su cuenta: se la abre acá para
+                    # que la migración y el cambio de versión se apliquen enteros o nada (si se
+                    # corta a la mitad, la conexión se cierra y SQLite deshace todo).
                     with conn:
-                        conn.executescript(script)
-                        conn.execute(f"PRAGMA user_version = {number}")
+                        conn.executescript(f"BEGIN;\n{script}\nPRAGMA user_version = {number};\nCOMMIT;")
                     log.info("Base de datos actualizada a la versión %d", number)
                 if version == 0:
                     self._import_legacy_json(conn)

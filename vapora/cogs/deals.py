@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, time
 from typing import TYPE_CHECKING
@@ -10,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from vapora.cogs._tasks import survives_errors
+from vapora.cogs._tasks import argentina_today, missed_daily_post, pending_daily_targets, survives_errors
 from vapora.sales import ARGENTINA, active_sale, due_notices
 from vapora.steam import SteamError
 from vapora.storage import Feature
@@ -29,6 +30,9 @@ class DealsCog(commands.Cog):
         self.bot = bot
         # La hora sale de la configuración, que recién se conoce al crear el cog.
         self.post_daily_deals.change_interval(time=time(hour=bot.settings.deals_hour, tzinfo=ARGENTINA))
+        # La vuelta periódica y /config pueden revisar los avisos a la vez: sin esto, los dos
+        # verían el mismo aviso pendiente y lo mandarían dos veces.
+        self._announce_lock = asyncio.Lock()
 
     async def cog_load(self) -> None:
         self.post_daily_deals.start()
@@ -57,23 +61,23 @@ class DealsCog(commands.Cog):
     @tasks.loop(time=time(hour=12, tzinfo=ARGENTINA))  # la hora real se define en __init__
     @survives_errors
     async def post_daily_deals(self) -> None:
-        """Publica las ofertas del día en cada servidor que eligió un canal para eso."""
-        configured = await self.bot.db.channels_for(Feature.DEALS)
-        channels = [
-            channel for channel_id in configured.values() if (channel := self.bot.find_channel(channel_id))
-        ]
-        if not channels:
+        """Publica las ofertas del día en cada servidor que eligió un canal y todavía no las tiene."""
+        today = argentina_today(_now())
+        targets = await pending_daily_targets(self.bot, Feature.DEALS, today)
+        if not targets:
             return
         try:
             embed = await self._build_deals_embed()
         except SteamError:
             log.warning("No se pudieron obtener las ofertas del día", exc_info=True)
             return
-        for channel in channels:
+        for guild_id, channel in targets:
             try:
                 await channel.send(embed=embed)
             except discord.HTTPException:
                 log.exception("No se pudieron publicar las ofertas en #%s", channel)
+                continue
+            await self.bot.db.mark_posted(guild_id, Feature.DEALS, today)
 
     @tasks.loop(minutes=SALE_CHECK_MINUTES)
     @survives_errors
@@ -81,6 +85,12 @@ class DealsCog(commands.Cog):
         await self._announce_due_sales()
 
     @post_daily_deals.before_loop
+    async def _catch_up_daily_deals(self) -> None:
+        """Si el bot arrancó poco después de la hora de las ofertas, las publica ahora."""
+        await self.bot.wait_until_ready()
+        if missed_daily_post(_now(), self.bot.settings.deals_hour):
+            await self.post_daily_deals()
+
     @announce_sales.before_loop
     async def _wait_until_ready(self) -> None:
         await self.bot.wait_until_ready()
@@ -92,6 +102,10 @@ class DealsCog(commands.Cog):
 
     async def _announce_due_sales(self) -> None:
         """Manda en cada servidor los avisos de rebajas que correspondan y todavía no se enviaron."""
+        async with self._announce_lock:
+            await self._send_due_notices()
+
+    async def _send_due_notices(self) -> None:
         configured = await self.bot.db.channels_for(Feature.SALES)
         if not configured:
             return

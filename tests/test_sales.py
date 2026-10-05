@@ -1,8 +1,10 @@
 from datetime import UTC, date, datetime, timedelta
 
 import aiohttp
+import pytest
 from helpers import FIXTURES, FakeSession
 
+from vapora import sales as sales_module
 from vapora.sales import (
     FALLBACK_SALES,
     SUMMER_COLOR,
@@ -137,3 +139,25 @@ def test_only_seasonal_sales_have_their_own_color():
     assert colors["Rebajas de Otoño"] == 0xE67E22  # naranja
     assert colors["Steam Next Fest"] is None  # no es una rebaja de precios
     assert all(color for name, color in colors.items() if name.startswith("Rebajas"))
+
+
+async def test_expired_fallback_is_reported_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    old = (SteamSale("Rebajas de Otoño", date(2020, 10, 1), date(2020, 10, 8)),)
+    monkeypatch.setattr(sales_module, "FALLBACK_SALES", old)
+    calendar = SalesCalendar(FakeSession({"upcoming_events": aiohttp.ClientError()}))  # type: ignore[arg-type]
+    calendar._check_fallback()
+    calendar._check_fallback()
+    errors = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert len(errors) == 1 and "FALLBACK_SALES" in errors[0].getMessage()
+
+
+async def test_current_fallback_is_not_reported(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    future = (SteamSale("Rebajas de Otoño", date(2099, 10, 1), date(2099, 10, 8)),)
+    monkeypatch.setattr(sales_module, "FALLBACK_SALES", future)
+    calendar = SalesCalendar(FakeSession({"upcoming_events": aiohttp.ClientError()}))  # type: ignore[arg-type]
+    await calendar.sales()
+    assert not [record for record in caplog.records if record.levelname == "ERROR"]

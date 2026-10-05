@@ -105,3 +105,10 @@ async def test_cards_use_the_sale_color_while_a_sale_is_running(bot: FakeBot):
 
     assert regular.color.value == 0x74ACDF  # celeste de siempre
     assert seasonal.color.value == 0xE67E22  # naranja de otoño
+
+
+async def test_failed_reply_keeps_the_original_preview(bot: FakeBot):
+    message = make_message(LINK)
+    message.reply.side_effect = discord.Forbidden(MagicMock(status=403), "sin permiso para escribir")
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]  # no propaga
+    message.edit.assert_not_awaited()  # si no hay tarjeta, que al menos quede el preview de Discord

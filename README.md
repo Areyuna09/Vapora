@@ -94,7 +94,7 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 | `/ofertas` | Ofertas destacadas de Steam con precio en pesos | Todos |
 | `/rebajas` | Rebaja actual y próximas, con cuenta regresiva | Todos |
 | `/deseado agregar` | Agregar un juego a tus deseados (por nombre o link) | Todos |
-| `/deseado lista` · `/deseado quitar` | Ver o sacar juegos de tus deseados | Todos |
+| `/deseado lista` · `/deseado quitar` | Ver o sacar juegos de tus deseados (de la lista o por nombre) | Todos |
 | `/ayuda` | Qué hace Vapora y cómo usarla | Todos |
 | `/config canal` | Elegir el canal de las ofertas diarias, los avisos de rebajas o los avisos de deseados | Admins* |
 | `/config desactivar` | Dejar de publicar ofertas o avisos | Admins* |
@@ -104,7 +104,9 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 
 Cada servidor elige sus propios canales. Se guardan en una base **SQLite** (`data/vapora.db`) junto con los avisos ya enviados y las listas de deseados.
 
-Los deseados se revisan cada hora. Vapora avisa **una vez por oferta** (y otra si el precio baja más) en el canal elegido con `/config canal` → *Avisos de deseados*, mencionando a cada persona. Si el servidor no eligió canal, avisa por MD.
+Las ofertas diarias salen una vez por día en cada servidor. Si Vapora se reinicia (por ejemplo, con un deploy) hasta 6 horas después de `DEALS_HOUR` y todavía no las publicó, las publica apenas se conecta.
+
+Los deseados se revisan cada hora, pidiendo a Steam solo los precios y de a 100 juegos por pedido. Vapora avisa **una vez por oferta** (y otra si el precio baja más) en el canal elegido con `/config canal` → *Avisos de deseados*, mencionando a cada persona. Si el servidor no eligió canal, avisa por MD.
 
 ## ⚙️ Configuración
 
@@ -117,7 +119,6 @@ Todo se configura en el archivo `.env` (ver [`.env.example`](.env.example)):
 | `PROVINCE_TAX_PERCENT` | `0` | Ingresos Brutos de tu provincia (ej. `2` en CABA/PBA) |
 | `EXCHANGE_RATE_TTL_SECONDS` | `1800` | Cada cuánto se actualiza la cotización |
 | `DEALS_HOUR` | `12` | Hora de Argentina a la que se publican las ofertas del día |
-
 | `DATABASE_FILE` | `data/vapora.db` | Archivo de la base de datos SQLite |
 
 > [!TIP]

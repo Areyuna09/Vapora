@@ -29,29 +29,48 @@ def parse_app(app_id: int, data: dict[str, Any]) -> StoreItem:
     release = data.get("release_date") or {}
     is_dlc = data.get("type") == "dlc"
 
-    price = None
-    overview = data.get("price_overview")
-    if overview and overview.get("final") is not None:
-        price = Price(
-            final_cents=overview["final"],
-            initial_cents=overview.get("initial"),
-            discount_percent=overview.get("discount_percent", 0),
-            currency=overview.get("currency"),
-        )
-
     return StoreItem(
         ref=ref,
         name=data.get("name") or _default_name(ref),
         description=data.get("short_description"),
         image_url=data.get("header_image"),
         is_free=bool(data.get("is_free")),
-        price=price,
+        price=parse_price_overview(data.get("price_overview")),
         release_date=release.get("date") or None,
         coming_soon=bool(release.get("coming_soon")),
         genres=tuple(g["description"] for g in data.get("genres") or [] if g.get("description")),
         developers=tuple(data.get("developers") or []),
         dlc_of=(data.get("fullgame") or {}).get("name") if is_dlc else None,
     )
+
+
+def parse_price_overview(overview: dict[str, Any] | None) -> Price | None:
+    """Precio de un juego (`price_overview` de `appdetails`). `None` si es gratis o no se vende."""
+    if not overview or overview.get("final") is None:
+        return None
+    return Price(
+        final_cents=overview["final"],
+        initial_cents=overview.get("initial"),
+        discount_percent=overview.get("discount_percent", 0),
+        currency=overview.get("currency"),
+    )
+
+
+def parse_app_prices(payload: dict[str, Any] | None) -> dict[int, Price | None]:
+    """Precios de varios juegos (`appdetails` con `filters=price_overview`).
+
+    Los juegos que Steam no encuentra no aparecen en el resultado; los gratis o sin precio
+    aparecen con `None` (en ese caso Steam devuelve `data` como lista vacía).
+    """
+    prices: dict[int, Price | None] = {}
+    for app_id, entry in (payload or {}).items():
+        if not isinstance(entry, dict) or not entry.get("success") or not str(app_id).isdigit():
+            continue
+        data = entry.get("data")
+        prices[int(app_id)] = parse_price_overview(
+            data.get("price_overview") if isinstance(data, dict) else None
+        )
+    return prices
 
 
 def parse_package(package_id: int, data: dict[str, Any]) -> StoreItem:

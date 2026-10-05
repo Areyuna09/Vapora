@@ -1,3 +1,7 @@
+import asyncio
+
+import pytest
+
 from vapora.cache import RefreshingValue, TTLCache
 
 
@@ -93,3 +97,69 @@ async def test_refreshing_value_retries_soon_after_a_failure():
     clock.now = 10
     assert await value.get(source) == 7
     assert source.calls == 2
+
+
+# ── Pedidos simultáneos ───────────────────────────────────────────────────────
+
+
+class SlowSource(Source):
+    """Fuente que no responde hasta que el test lo indica, para simular pedidos simultáneos."""
+
+    def __init__(self, *values: object) -> None:
+        super().__init__(*values)
+        self.release = asyncio.Event()
+
+    async def __call__(self) -> object:
+        self.calls += 1
+        await self.release.wait()
+        return self._values[0]
+
+
+async def test_ttl_cache_fetches_once_for_simultaneous_requests():
+    source = SlowSource("dato")
+    cache: TTLCache[str, object] = TTLCache(60, clock=Clock())
+    pending = asyncio.gather(*(cache.get_or_fetch("k", source) for _ in range(3)))
+    await asyncio.sleep(0)
+    source.release.set()
+    assert await pending == ["dato", "dato", "dato"]
+    assert source.calls == 1
+
+
+async def test_ttl_cache_shares_the_error_and_retries_later():
+    calls = 0
+
+    async def failing() -> object:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("falló")
+
+    cache: TTLCache[str, object] = TTLCache(60, clock=Clock())
+    results = await asyncio.gather(
+        cache.get_or_fetch("k", failing), cache.get_or_fetch("k", failing), return_exceptions=True
+    )
+    assert all(isinstance(result, RuntimeError) for result in results)
+    assert calls == 1
+    with pytest.raises(RuntimeError):  # el error no se guarda: el próximo pedido reintenta
+        await cache.get_or_fetch("k", failing)
+    assert calls == 2
+
+
+async def test_ttl_cache_cancelling_one_waiter_does_not_cancel_the_others():
+    source = SlowSource("dato")
+    cache: TTLCache[str, object] = TTLCache(60, clock=Clock())
+    first = asyncio.ensure_future(cache.get_or_fetch("k", source))
+    second = asyncio.ensure_future(cache.get_or_fetch("k", source))
+    await asyncio.sleep(0)
+    first.cancel()
+    source.release.set()
+    assert await second == "dato"
+
+
+async def test_refreshing_value_refreshes_once_for_simultaneous_requests():
+    source = SlowSource(5)
+    value: RefreshingValue[object] = RefreshingValue(100, None, clock=Clock())
+    pending = asyncio.gather(*(value.get(source) for _ in range(3)))
+    await asyncio.sleep(0)
+    source.release.set()
+    assert await pending == [5, 5, 5]
+    assert source.calls == 1

@@ -1,5 +1,6 @@
 from vapora.steam import Price, SearchResult
-from vapora.wishlist import OfferAction, offer_action, resolve_app_id
+from vapora.storage import Wish
+from vapora.wishlist import OfferAction, find_wish, offer_action, resolve_app_id
 
 ON_SALE = Price(1000, 2000, 50, "USD")
 CHEAPER = Price(600, 2000, 70, "USD")
@@ -45,13 +46,26 @@ class FakeSteam:
 
     async def search(self, term: str, *, limit: int = 10) -> list[SearchResult]:
         self.searches.append(term)
+        if term == "1942":
+            return [SearchResult(220, "1942")]
         return [SearchResult(367520, "Hollow Knight")] if "hollow" in term.lower() else []
 
 
-async def test_autocomplete_choice_is_already_an_app_id():
+async def test_autocomplete_choice_carries_the_app_id():
     steam = FakeSteam()
-    assert await resolve_app_id(" 367520 ", steam) == 367520  # type: ignore[arg-type]
+    assert await resolve_app_id(" app:367520 ", steam) == 367520  # type: ignore[arg-type]
     assert steam.searches == []
+
+
+async def test_a_typed_number_is_searched_as_a_name_first():
+    """Un juego puede llamarse "1942": no se confunde con el AppID 1942."""
+    assert await resolve_app_id("1942", FakeSteam()) == 220  # type: ignore[arg-type]
+
+
+async def test_a_typed_app_id_still_works_when_no_name_matches():
+    steam = FakeSteam()
+    assert await resolve_app_id("367520", steam) == 367520  # type: ignore[arg-type]
+    assert steam.searches == ["367520"]
 
 
 async def test_store_link():
@@ -72,3 +86,34 @@ async def test_unknown_name():
 async def test_bundle_link_is_not_a_game():
     link = "https://store.steampowered.com/bundle/232/"
     assert await resolve_app_id(link, FakeSteam()) is None  # type: ignore[arg-type]
+
+
+# ── Qué deseado quiere quitar ─────────────────────────────────────────────────
+
+WISHES = [
+    Wish(5, 367520, "Hollow Knight", None, None),
+    Wish(5, 1057090, "Ori and the Will of the Wisps", None, None),
+    Wish(5, 2100, "Ori and the Blind Forest", None, None),
+    Wish(5, 220, "1942", None, None),
+]
+
+
+def test_find_wish_by_autocomplete_choice():
+    assert find_wish(WISHES, "app:367520") == WISHES[0]
+    assert find_wish(WISHES, "app:999") is None
+
+
+def test_find_wish_by_typed_name():
+    assert find_wish(WISHES, "  hollow KNIGHT ") == WISHES[0]  # exacto, sin importar mayúsculas
+    assert find_wish(WISHES, "hollow") == WISHES[0]  # parte del nombre
+    assert find_wish(WISHES, "1942") == WISHES[3]  # el nombre gana sobre el AppID
+
+
+def test_find_wish_does_not_guess_between_several_matches():
+    assert find_wish(WISHES, "ori") is None
+    assert find_wish(WISHES, "") is None
+
+
+def test_find_wish_by_typed_app_id():
+    assert find_wish(WISHES, "1057090") == WISHES[1]
+    assert find_wish(WISHES, "123") is None

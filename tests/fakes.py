@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import date
 from types import SimpleNamespace
 from typing import Any
@@ -13,7 +13,7 @@ import discord
 from vapora.config import Settings
 from vapora.pricing import ExchangeRates, PesoConverter
 from vapora.sales import AUTUMN_COLOR, SteamSale
-from vapora.steam import Deal, ItemRef, SearchResult, SteamError, StoreItem
+from vapora.steam import Deal, ItemKind, ItemRef, Price, SearchResult, SteamError, StoreItem
 from vapora.storage import Database
 
 AUTUMN_SALE = SteamSale("Rebajas de Otoño", date(2026, 10, 1), date(2026, 10, 8), "🍂", AUTUMN_COLOR)
@@ -27,10 +27,22 @@ class FakeSteam:
         self.deals: list[Deal] = []
         self.argentine_ids: frozenset[int] = frozenset()
         self.down = False
+        self.price_requests: list[set[int]] = []
+        self.item_requests: list[ItemRef] = []
 
     async def get_item(self, ref: ItemRef) -> StoreItem | None:
         self._check()
+        self.item_requests.append(ref)
         return self.items.get(ref)
+
+    async def prices(self, app_ids: Collection[int]) -> dict[int, Price | None]:
+        self._check()
+        self.price_requests.append(set(app_ids))
+        return {
+            ref.id: item.price
+            for ref, item in self.items.items()
+            if ref.kind is ItemKind.APP and ref.id in app_ids
+        }
 
     async def search(self, term: str, *, limit: int = 10) -> list[SearchResult]:
         self._check()

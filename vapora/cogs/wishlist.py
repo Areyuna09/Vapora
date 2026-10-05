@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import discord
@@ -12,11 +13,11 @@ from discord.ext import commands, tasks
 from vapora.cogs._tasks import survives_errors
 from vapora.pricing import PesoConverter
 from vapora.sales import SteamSale
-from vapora.steam import ItemRef, SteamError, StoreItem
+from vapora.steam import ItemRef, Price, SteamError, StoreItem
 from vapora.storage import MAX_WISHLIST_SIZE, AddWishResult, Feature, Wish
 from vapora.ui.game_card import build_game_card
 from vapora.ui.panels import build_wishlist_embed
-from vapora.wishlist import OfferAction, offer_action, resolve_app_id
+from vapora.wishlist import OfferAction, choice_value, find_wish, offer_action, resolve_app_id
 
 if TYPE_CHECKING:
     from vapora.bot import VaporaBot
@@ -74,7 +75,23 @@ class WishlistCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wish_button(self, interaction: discord.Interaction, app_id: int) -> None:
-        """Alguien tocó "Avisame si baja" en una tarjeta (ver `events.WISH_BUTTON`)."""
+        """Alguien tocó "Avisame si baja" en una tarjeta (ver `events.WISH_BUTTON`).
+
+        El botón ya dejó la respuesta "pensando…": pase lo que pase hay que contestar, porque
+        los errores de un evento no llegan al manejador de los comandos y quedaría colgado.
+        """
+        try:
+            await self._add_from_button(interaction, app_id)
+        except Exception:
+            log.exception("Falló el botón de deseados para %s", app_id)
+            try:
+                await interaction.followup.send(
+                    "😕 Algo salió mal. Probá de nuevo en un rato.", ephemeral=True
+                )
+            except discord.HTTPException:
+                log.warning("No pude avisarle al usuario del error", exc_info=True)
+
+    async def _add_from_button(self, interaction: discord.Interaction, app_id: int) -> None:
         try:
             item = await self.bot.steam.get_item(ItemRef.app(app_id))
         except SteamError:
@@ -129,9 +146,10 @@ class WishlistCog(commands.Cog):
     # ── /deseado quitar y /deseado lista ──────────────────────────────────────
 
     @wish.command(name="quitar", description="Quitar un juego de tus deseados")
-    @app_commands.describe(juego="Juego a quitar")
+    @app_commands.describe(juego="Juego a quitar (elegilo de la lista o escribí su nombre)")
     async def remove(self, interaction: discord.Interaction, juego: str) -> None:
-        name = await self.bot.db.remove_wish(interaction.user.id, int(juego)) if juego.isdigit() else None
+        wish = find_wish(await self.bot.db.wishlist(interaction.user.id), juego)
+        name = await self.bot.db.remove_wish(wish.user_id, wish.app_id) if wish else None
         text = f"🗑️ Saqué **{name}** de tus deseados." if name else "Ese juego no está en tus deseados."
         await interaction.response.send_message(text, ephemeral=True)
 
@@ -159,46 +177,63 @@ class WishlistCog(commands.Cog):
     @tasks.loop(hours=PRICE_CHECK_HOURS)
     @survives_errors
     async def check_prices(self) -> None:
-        """Revisa el precio de todos los deseados y avisa de las ofertas nuevas."""
+        """Revisa el precio de todos los deseados y avisa de las ofertas nuevas.
+
+        Primero pide solo los precios, todos juntos (unos pocos pedidos a Steam aunque haya
+        muchos juegos). Los datos completos para la tarjeta se piden solo de los que hay
+        que avisar.
+        """
         wishes = await self.bot.db.all_wishes()
         if not wishes:
             return
-        items = await self._fetch_items({wish.app_id for wish in wishes})
+        try:
+            prices = await self.bot.steam.prices({wish.app_id for wish in wishes})
+        except SteamError:
+            log.warning("No pude consultar los precios de los deseados", exc_info=True)
+            return
         converter = await self.bot.peso_converter()
         sale = await self.bot.current_sale()
+        cards: dict[int, StoreItem | None] = {}  # datos para tarjetas ya pedidos en esta revisión
         for wish in wishes:
-            item = items.get(wish.app_id)
-            if item is not None:
-                await self._update_wish(wish, item, converter, sale)
+            if wish.app_id in prices:  # si Steam no lo informó, se revisa la próxima vez
+                await self._update_wish(wish, prices[wish.app_id], cards, converter, sale)
 
     @check_prices.before_loop
     async def _wait_until_ready(self) -> None:
         await self.bot.wait_until_ready()
 
-    async def _fetch_items(self, app_ids: set[int]) -> dict[int, StoreItem]:
-        """Datos actuales de cada juego. Los que fallan se saltean hasta la próxima revisión."""
-        items = {}
-        for app_id in app_ids:
-            try:
-                item = await self.bot.steam.get_item(ItemRef.app(app_id))
-            except SteamError:
-                log.warning("No pude consultar el precio del deseado %s", app_id, exc_info=True)
-                continue
-            if item is not None:
-                items[app_id] = item
-        return items
-
     async def _update_wish(
-        self, wish: Wish, item: StoreItem, converter: PesoConverter, sale: SteamSale | None
+        self,
+        wish: Wish,
+        price: Price | None,
+        cards: dict[int, StoreItem | None],
+        converter: PesoConverter,
+        sale: SteamSale | None,
     ) -> None:
-        action = offer_action(wish.notified_final_cents, item.price)
-        if action is OfferAction.NOTIFY and item.price is not None:
+        action = offer_action(wish.notified_final_cents, price)
+        if action is OfferAction.NOTIFY and price is not None:
+            if wish.app_id not in cards:
+                cards[wish.app_id] = await self._fetch_card_item(wish.app_id, price)
+            item = cards[wish.app_id]
             # Si no se pudo avisar no se marca, así se reintenta en la próxima revisión.
-            if await self._notify(wish, item, converter, sale):
-                await self.bot.db.set_wish_notified(wish.user_id, wish.app_id, item.price.final_cents)
+            if item is not None and await self._notify(wish, item, converter, sale):
+                await self.bot.db.set_wish_notified(wish.user_id, wish.app_id, price.final_cents)
                 log.info("Aviso de deseado: %s a %s", item.name, wish.user_id)
         elif action is OfferAction.RESET:
             await self.bot.db.set_wish_notified(wish.user_id, wish.app_id, None)
+
+    async def _fetch_card_item(self, app_id: int, price: Price) -> StoreItem | None:
+        """Datos para la tarjeta del aviso, con el precio recién consultado.
+
+        Los datos pueden venir del caché (hasta una hora), así que se les pone el precio
+        actual para que la tarjeta muestre la oferta que se está avisando.
+        """
+        try:
+            item = await self.bot.steam.get_item(ItemRef.app(app_id))
+        except SteamError:
+            log.warning("No pude consultar el deseado %s para avisar", app_id, exc_info=True)
+            return None
+        return replace(item, price=price) if item is not None else None
 
     async def _notify(
         self, wish: Wish, item: StoreItem, converter: PesoConverter, sale: SteamSale | None
@@ -236,4 +271,4 @@ class WishlistCog(commands.Cog):
 
 
 def _choice(name: str, app_id: int) -> app_commands.Choice[str]:
-    return app_commands.Choice(name=name[:MAX_CHOICE_NAME_LENGTH], value=str(app_id))
+    return app_commands.Choice(name=name[:MAX_CHOICE_NAME_LENGTH], value=choice_value(app_id))

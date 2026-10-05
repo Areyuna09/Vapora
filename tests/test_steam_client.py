@@ -115,3 +115,99 @@ async def test_search_respects_limit():
     payload = {"items": [{"type": "app", "id": i, "name": f"Juego {i}"} for i in range(5)]}
     client, _ = _client({"storesearch": payload})
     assert [result.app_id for result in await client.search("juego", limit=2)] == [0, 1]
+
+
+# ── Precios de varios juegos ──────────────────────────────────────────────────
+
+
+def _prices_payload(params: dict[str, str]) -> dict:
+    """appdetails con filters=price_overview: Hollow Knight con precio, 570 gratis, el resto no existe."""
+    payload: dict = {}
+    for app_id in params["appids"].split(","):
+        if app_id == "367520":
+            payload[app_id] = {"success": True, "data": APP["367520"]["data"]}
+        elif app_id == "570":
+            payload[app_id] = {"success": True, "data": []}  # así responde Steam con los gratis
+        else:
+            payload[app_id] = {"success": False}
+    return payload
+
+
+async def test_prices_of_several_games_in_one_request():
+    client, session = _client({"api/appdetails": _prices_payload})
+    prices = await client.prices({367520, 570, 999})
+    assert prices[367520] is not None and prices[367520].final_cents == 499
+    assert prices[570] is None  # gratis
+    assert 999 not in prices  # Steam no lo encontró
+    ((_, params),) = session.calls
+    assert params == {"appids": "570,999,367520", "filters": "price_overview", "cc": "ar", "l": "spanish"}
+
+
+async def test_prices_are_requested_in_chunks():
+    client, session = _client({"api/appdetails": _prices_payload})
+    await client.prices(range(250))
+    assert [len(params["appids"].split(",")) for _, params in session.calls] == [100, 100, 50]
+
+
+async def test_prices_keep_the_chunks_that_worked():
+    def flaky(params: dict[str, str]) -> object:
+        if params["appids"].startswith("0,"):
+            return ["respuesta", "rota"]
+        return _prices_payload(params)
+
+    client, _ = _client({"api/appdetails": flaky})
+    prices = await client.prices([*range(100), 367520])
+    assert set(prices) == {367520}
+
+
+async def test_prices_raise_when_nothing_could_be_fetched():
+    client, _ = _client({"api/appdetails": aiohttp.ClientError()})
+    with pytest.raises(SteamError):
+        await client.prices({367520})
+
+
+async def test_prices_of_nothing_makes_no_request():
+    client, session = _client({})
+    assert await client.prices(set()) == {}
+    assert session.calls == []
+
+
+# ── Respuestas con forma inesperada ───────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("route", "ref"),
+    [
+        ("api/appdetails", ItemRef.app(367520)),
+        ("api/packagedetails", ItemRef(ItemKind.PACKAGE, 469)),
+    ],
+)
+async def test_details_with_unexpected_shape_raise_steam_error(route: str, ref: ItemRef):
+    client, _ = _client({route: [], "curator": CURATOR})
+    with pytest.raises(SteamError):
+        await client.get_item(ref)
+
+
+async def test_bundle_with_unexpected_shape_raises_steam_error():
+    client, _ = _client({"ajaxresolvebundles": {"error": "algo"}})
+    with pytest.raises(SteamError):
+        await client.get_item(ItemRef(ItemKind.BUNDLE, 232))
+
+
+async def test_null_details_mean_the_item_does_not_exist():
+    client, _ = _client({"api/appdetails": None, "curator": CURATOR})
+    assert await client.get_item(ItemRef.app(367520)) is None
+
+
+async def test_search_and_deals_with_unexpected_shape_raise_steam_error():
+    client, _ = _client({"storesearch": ["x"], "featuredcategories": "texto"})
+    with pytest.raises(SteamError):
+        await client.search("juego")
+    with pytest.raises(SteamError):
+        await client.featured_deals()
+
+
+async def test_unexpected_reviews_are_skipped_like_a_failure():
+    client, _ = _client({"api/appdetails": APP, "appreviews": ["x"], "curator": CURATOR})
+    item = await client.get_item(ItemRef.app(367520))
+    assert item is not None and item.reviews is None
