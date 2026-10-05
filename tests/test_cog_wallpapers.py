@@ -123,3 +123,39 @@ async def test_daily_wallpaper_catch_up_after_a_restart(
     channel = bot.add_channel(CHANNEL)
     await WallpapersCog(bot)._catch_up_daily_wallpaper()  # type: ignore[arg-type]
     assert channel.send.await_count == (1 if catches_up else 0)
+
+
+# ── Vista previa agrandada ────────────────────────────────────────────────────
+
+
+async def test_animated_preview_goes_enlarged_as_an_attachment(cog: WallpapersCog, bot: FakeBot):
+    bot.workshop = FakeWorkshop(ANIME)
+    bot.previews.enlarged_by_url[ANIME.preview_url or ""] = b"GIF89a-agrandado"
+    interaction = make_interaction()
+    await cog.wallpaper.callback(cog, interaction)
+    sent = sent_kwargs(interaction.followup.send)
+    (attachment,) = sent["files"]
+    assert attachment.filename == "fondo-1.gif"
+    assert sent["embed"].image.url == "attachment://fondo-1.gif"
+
+
+async def test_static_preview_keeps_the_original_image(cog: WallpapersCog, bot: FakeBot):
+    bot.workshop = FakeWorkshop(LAKE)  # JPEG: el agrandador no devuelve nada
+    interaction = make_interaction()
+    await cog.wallpaper.callback(cog, interaction)
+    sent = sent_kwargs(interaction.followup.send)
+    assert sent["files"] == []
+    assert sent["embed"].image.url == "https://img/2.jpg"
+
+
+async def test_daily_wallpaper_attaches_a_fresh_file_per_channel(
+    bot: FakeBot, db: Database, at_wallpaper_time: datetime
+):
+    bot.workshop = FakeWorkshop(ANIME)
+    bot.previews.enlarged_by_url[ANIME.preview_url or ""] = b"GIF89a-agrandado"
+    await db.set_channel(GUILD, Feature.WALLPAPERS, CHANNEL)
+    await db.set_channel(11, Feature.WALLPAPERS, 501)
+    first, second = bot.add_channel(CHANNEL), bot.add_channel(501)
+    await WallpapersCog(bot).post_daily_wallpaper()  # type: ignore[arg-type]
+    first_file, second_file = sent_kwargs(first.send)["files"][0], sent_kwargs(second.send)["files"][0]
+    assert first_file is not second_file  # un discord.File se puede mandar una sola vez

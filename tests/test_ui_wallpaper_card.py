@@ -2,7 +2,12 @@ import discord
 
 from vapora.steam.workshop import WALLPAPER_ENGINE_STORE_URL, Wallpaper
 from vapora.ui.style import WALLPAPER_COLOR
-from vapora.ui.wallpaper_card import add_wallpaper_buttons, build_wallpaper_buttons, build_wallpaper_card
+from vapora.ui.wallpaper_card import (
+    add_wallpaper_buttons,
+    build_wallpaper_buttons,
+    build_wallpaper_card,
+    build_wallpaper_message,
+)
 
 WALLPAPER = Wallpaper(
     100,
@@ -75,3 +80,18 @@ def test_long_titles_are_clipped_to_discord_limit():
 
 def test_no_wallpapers_no_buttons():
     assert build_wallpaper_buttons([]).children == []
+
+
+def test_message_with_enlarged_preview_attaches_it():
+    embed, files = build_wallpaper_message(WALLPAPER, b"GIF89a-agrandado", title_prefix="🖼️ Fondo del día ·")
+    (attachment,) = files
+    assert attachment.filename == "fondo-100.gif"
+    assert attachment.fp.read() == b"GIF89a-agrandado"
+    assert embed.image.url == "attachment://fondo-100.gif"
+    assert embed.title == "🖼️ Fondo del día · Lago al atardecer"
+
+
+def test_message_without_enlarged_preview_uses_the_original():
+    embed, files = build_wallpaper_message(WALLPAPER, None)
+    assert files == []
+    assert embed.image.url == "https://img/lago.gif"

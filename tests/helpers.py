@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import Any
 
 import aiohttp
+from PIL import Image
 
 from vapora.steam import ItemKind, ItemRef, Price, StoreItem
 
@@ -32,6 +34,21 @@ class FakeResponse:
 
     async def text(self) -> str:
         return str(self._payload)
+
+    async def read(self) -> bytes:
+        return self._payload if isinstance(self._payload, bytes) else str(self._payload).encode()
+
+    @property
+    def content_length(self) -> int | None:
+        return len(self._payload) if isinstance(self._payload, bytes) else None
+
+
+def make_gif(size: tuple[int, int] = (160, 160), frames: int = 3, duration: int = 80) -> bytes:
+    """GIF animado de prueba: cada cuadro de un color distinto."""
+    images = [Image.new("RGB", size, (60 * i % 256, 120, 200)) for i in range(frames)]
+    out = io.BytesIO()
+    images[0].save(out, format="GIF", save_all=True, append_images=images[1:], duration=duration, loop=0)
+    return out.getvalue()
 
 
 class FakeSession:

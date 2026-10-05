@@ -12,7 +12,7 @@ from vapora.steam import ItemRef, SteamError, StoreItem, extract_item_refs
 from vapora.steam.workshop import Wallpaper, extract_workshop_ids
 from vapora.ui.buttons import build_card_buttons
 from vapora.ui.game_card import build_game_card
-from vapora.ui.wallpaper_card import add_wallpaper_buttons, build_wallpaper_card
+from vapora.ui.wallpaper_card import add_wallpaper_buttons, build_wallpaper_message
 
 if TYPE_CHECKING:
     from vapora.bot import VaporaBot
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 MAX_CARDS_PER_MESSAGE = 10  # Discord admite hasta 10 embeds por mensaje
+MAX_ATTACHED_BYTES = 8 * 1024 * 1024  # Discord rechaza mensajes con más de 10 MB de adjuntos
 
 
 class LinksCog(commands.Cog):
@@ -39,15 +40,18 @@ class LinksCog(commands.Cog):
         if not items and not wallpapers:
             return
 
-        embeds = [build_wallpaper_card(wallpaper) for wallpaper in wallpapers]
+        embeds: list[discord.Embed] = []
         if items:
             converter = await self.bot.peso_converter()
             sale = await self.bot.current_sale()
-            embeds = [build_game_card(item, converter, sale) for item in items] + embeds
+            embeds = [build_game_card(item, converter, sale) for item in items]
+        wallpaper_embeds, files = await self._wallpaper_cards(wallpapers)
         view = build_card_buttons(items)
         add_wallpaper_buttons(view, wallpapers, first_row=len(items))
         try:
-            await message.reply(embeds=embeds, view=view, mention_author=False)
+            await message.reply(
+                embeds=embeds + wallpaper_embeds, files=files, view=view, mention_author=False
+            )
         except discord.HTTPException:
             # Sin permiso para escribir en ese canal, por ejemplo: no se oculta el preview
             # original, así el link no queda sin ninguna tarjeta.
@@ -83,6 +87,25 @@ class LinksCog(commands.Cog):
             if wallpaper is not None:
                 wallpapers.append(wallpaper)
         return wallpapers
+
+    async def _wallpaper_cards(
+        self, wallpapers: list[Wallpaper]
+    ) -> tuple[list[discord.Embed], list[discord.File]]:
+        """Tarjetas de los fondos, con la vista previa agrandada adjunta mientras entre.
+
+        Los adjuntos de un mensaje no pueden pasar el límite de Discord: los que no entran
+        usan la vista previa original.
+        """
+        embeds, files, attached_bytes = [], [], 0
+        for wallpaper in wallpapers:
+            enlarged = await self.bot.previews.enlarged(wallpaper.preview_url)
+            if enlarged is not None and attached_bytes + len(enlarged) > MAX_ATTACHED_BYTES:
+                enlarged = None
+            embed, wallpaper_files = build_wallpaper_message(wallpaper, enlarged)
+            attached_bytes += len(enlarged or b"")
+            embeds.append(embed)
+            files += wallpaper_files
+        return embeds, files
 
     async def _hide_link_preview(self, message: discord.Message) -> None:
         """Oculta el preview que Discord arma para el link, así queda solo la tarjeta de Vapora."""

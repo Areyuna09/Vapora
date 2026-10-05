@@ -44,7 +44,7 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 - 🔥 **Ofertas destacadas**: `/ofertas` o todos los días en el canal que elijas, con precio en pesos.
 - 🔔 **Deseados**: cada uno arma su lista con `/deseado` o con el botón **Avisame si baja** de cada tarjeta, y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
 - 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
-- 🖼️ **Fondos de Wallpaper Engine**: `/fondo` recomienda uno en tendencia (con categoría opcional), hay un fondo del día en el canal que elijas, y los links del Workshop se muestran con su vista previa (animada si es un GIF). Solo fondos aptos para todo público.
+- 🖼️ **Fondos de Wallpaper Engine**: `/fondo` recomienda uno en tendencia (con categoría opcional), hay un fondo del día en el canal que elijas, y los links del Workshop se muestran con su vista previa. Las vistas previas animadas de Steam son GIF chicos (160-256 px), así que Vapora las agranda a 480 px sin perder la animación. Solo fondos aptos para todo público.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
 - 🎨 **Color de temporada**: durante una rebaja de Steam, las tarjetas toman su color (naranja en otoño, celeste hielo en invierno, rosa en primavera y amarillo en verano).
 - 💸 **Precio en pesos** con los impuestos vigentes, según el medio de pago.

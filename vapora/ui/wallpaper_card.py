@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Sequence
 
 import discord
@@ -16,8 +17,29 @@ MAX_BUTTON_ROWS = 5  # límite de Discord
 FOOTER = "Wallpaper Engine · Workshop de Steam · Se usa con la app de Wallpaper Engine"
 
 
-def build_wallpaper_card(wallpaper: Wallpaper, *, title_prefix: str = "🖼️") -> discord.Embed:
-    """Tarjeta con la vista previa en grande (si es un GIF, Discord la muestra animada)."""
+def build_wallpaper_message(
+    wallpaper: Wallpaper, enlarged_preview: bytes | None, *, title_prefix: str = "🖼️"
+) -> tuple[discord.Embed, list[discord.File]]:
+    """Tarjeta y adjuntos para mandar un fondo.
+
+    Con `enlarged_preview` (ver `vapora.previews`), la vista previa agrandada va adjunta y
+    la tarjeta la muestra; sin ella, la tarjeta usa la vista previa original de Steam.
+    Cada llamada arma archivos nuevos: un `discord.File` se puede mandar una sola vez.
+    """
+    if enlarged_preview is None:
+        return build_wallpaper_card(wallpaper, title_prefix=title_prefix), []
+    filename = f"fondo-{wallpaper.id}.gif"
+    embed = build_wallpaper_card(wallpaper, title_prefix=title_prefix, image_url=f"attachment://{filename}")
+    return embed, [discord.File(io.BytesIO(enlarged_preview), filename=filename)]
+
+
+def build_wallpaper_card(
+    wallpaper: Wallpaper, *, title_prefix: str = "🖼️", image_url: str | None = None
+) -> discord.Embed:
+    """Tarjeta con la vista previa en grande (si es un GIF, Discord la muestra animada).
+
+    `image_url` reemplaza a la vista previa de Steam (por ejemplo, por una adjunta).
+    """
     embed = discord.Embed(
         title=f"{title_prefix} {wallpaper.title}",
         url=wallpaper.url,
@@ -29,8 +51,9 @@ def build_wallpaper_card(wallpaper: Wallpaper, *, title_prefix: str = "🖼️")
     details = " · ".join(part for part in (wallpaper.kind, wallpaper.resolution) if part)
     if details:
         embed.add_field(name="🖥️ Tipo", value=details, inline=True)
-    if wallpaper.preview_url:
-        embed.set_image(url=wallpaper.preview_url)
+    image = image_url or wallpaper.preview_url
+    if image:
+        embed.set_image(url=image)
     embed.set_footer(text=FOOTER)
     return embed
 

@@ -85,6 +85,16 @@ class FakeWorkshop:
             raise SteamError("Steam caído (simulado)")
 
 
+class FakePreviews:
+    """Agrandador de vistas previas: por defecto no agranda nada (como si fueran JPEG)."""
+
+    def __init__(self) -> None:
+        self.enlarged_by_url: dict[str, bytes] = {}
+
+    async def enlarged(self, preview_url: str | None) -> bytes | None:
+        return self.enlarged_by_url.get(preview_url or "")
+
+
 class FakeCalendar:
     def __init__(self, sales: Sequence[SteamSale] = (AUTUMN_SALE,)) -> None:
         self._sales = sales
@@ -100,6 +110,7 @@ class FakeBot:
         self.db = db
         self.steam = steam or FakeSteam()
         self.workshop = FakeWorkshop()
+        self.previews = FakePreviews()
         self.calendar = FakeCalendar()
         self.settings = Settings(discord_token="test")
         self.rates = ExchangeRates(official=1550.0, crypto=1623.44)

@@ -5,6 +5,7 @@ import pytest
 from fakes import AUTUMN_SALE, FakeBot, FakeSteam, FakeWorkshop, make_message, sent_kwargs
 from helpers import make_item
 
+from vapora.cogs import links as links_module
 from vapora.cogs.links import LinksCog
 from vapora.pricing import ExchangeRates
 from vapora.steam import ItemKind
@@ -166,3 +167,25 @@ async def test_workshop_down_does_not_block_game_cards(bot: FakeBot):
     message = make_message(f"{LINK} {WORKSHOP_LINK}")
     await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
     assert [card.title for card in sent_kwargs(message.reply)["embeds"]] == ["🇦🇷 Hollow Knight"]
+
+
+async def test_wallpaper_link_attaches_the_enlarged_preview(bot: FakeBot):
+    bot.workshop = FakeWorkshop(WALLPAPER)
+    bot.previews.enlarged_by_url["https://img/nikke.gif"] = b"GIF89a-agrandado"
+    message = make_message(WORKSHOP_LINK)
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    assert [file.filename for file in reply["files"]] == ["fondo-3594441070.gif"]
+    assert reply["embeds"][0].image.url == "attachment://fondo-3594441070.gif"
+
+
+async def test_attachments_stay_within_discord_limits(bot: FakeBot, monkeypatch: pytest.MonkeyPatch):
+    other = Wallpaper(2, "Otro", "https://img/otro.gif", ("Everyone",))
+    bot.workshop = FakeWorkshop(WALLPAPER, other)
+    bot.previews.enlarged_by_url = {"https://img/nikke.gif": b"x" * 60, "https://img/otro.gif": b"y" * 60}
+    monkeypatch.setattr(links_module, "MAX_ATTACHED_BYTES", 100)
+    message = make_message(f"{WORKSHOP_LINK} https://steamcommunity.com/sharedfiles/filedetails/?id=2")
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    assert [file.filename for file in reply["files"]] == ["fondo-3594441070.gif"]  # el segundo no entra
+    assert reply["embeds"][1].image.url == "https://img/otro.gif"  # y usa la vista previa original

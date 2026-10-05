@@ -17,6 +17,7 @@ from vapora.cogs.settings import SettingsCog
 from vapora.cogs.wallpapers import WallpapersCog
 from vapora.cogs.wishlist import WishlistCog
 from vapora.config import Settings
+from vapora.previews import PreviewEnlarger
 from vapora.pricing import DollarClient, PesoConverter
 from vapora.sales import SalesCalendar, SteamSale, active_sale
 from vapora.steam import SteamClient, SteamError
@@ -34,12 +35,13 @@ COGS = (LinksCog, DealsCog, WishlistCog, WallpapersCog, SettingsCog, GeneralCog)
 class VaporaBot(commands.Bot):
     """Bot de Discord con los servicios de Vapora a mano para los cogs.
 
-    Los clientes HTTP (`steam`, `workshop`, `dollar`, `calendar`) se crean en `setup_hook`,
-    cuando ya existe el event loop que necesita la sesión de aiohttp.
+    Los clientes HTTP (`steam`, `workshop`, `previews`, `dollar`, `calendar`) se crean en
+    `setup_hook`, cuando ya existe el event loop que necesita la sesión de aiohttp.
     """
 
     steam: SteamClient
     workshop: WorkshopClient
+    previews: PreviewEnlarger
     dollar: DollarClient
     calendar: SalesCalendar
 
@@ -58,6 +60,7 @@ class VaporaBot(commands.Bot):
         self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS))
         self.steam = SteamClient(self._session)
         self.workshop = WorkshopClient(self._session)
+        self.previews = PreviewEnlarger(self._session)
         self.dollar = DollarClient(self._session, ttl_seconds=self.settings.exchange_rate_ttl_seconds)
         self.calendar = SalesCalendar(self._session)
         await self.db.setup()

@@ -18,7 +18,7 @@ from vapora.sales import ARGENTINA
 from vapora.steam import SteamError
 from vapora.steam.workshop import CATEGORIES, Wallpaper
 from vapora.storage import Feature
-from vapora.ui.wallpaper_card import build_wallpaper_buttons, build_wallpaper_card
+from vapora.ui.wallpaper_card import build_wallpaper_buttons, build_wallpaper_message
 
 if TYPE_CHECKING:
     from vapora.bot import VaporaBot
@@ -62,9 +62,8 @@ class WallpapersCog(commands.Cog):
         if chosen is None:
             await interaction.followup.send("🤔 No encontré fondos ahora. Probá de nuevo en un rato.")
             return
-        await interaction.followup.send(
-            embed=build_wallpaper_card(chosen), view=build_wallpaper_buttons([chosen])
-        )
+        embed, files = build_wallpaper_message(chosen, await self.bot.previews.enlarged(chosen.preview_url))
+        await interaction.followup.send(embed=embed, files=files, view=build_wallpaper_buttons([chosen]))
 
     # ── Fondo del día ─────────────────────────────────────────────────────────
 
@@ -86,11 +85,10 @@ class WallpapersCog(commands.Cog):
             if chosen is None:
                 log.warning("No hay fondos para publicar hoy")
                 return
+            enlarged = await self.bot.previews.enlarged(chosen.preview_url)
+            embed, files = build_wallpaper_message(chosen, enlarged, title_prefix="🖼️ Fondo del día ·")
             try:
-                await channel.send(
-                    embed=build_wallpaper_card(chosen, title_prefix="🖼️ Fondo del día ·"),
-                    view=build_wallpaper_buttons([chosen]),
-                )
+                await channel.send(embed=embed, files=files, view=build_wallpaper_buttons([chosen]))
             except discord.HTTPException:
                 log.exception("No se pudo publicar el fondo del día en #%s", channel)
                 continue
