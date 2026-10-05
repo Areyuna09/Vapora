@@ -92,3 +92,14 @@ async def test_config_show(bot: FakeBot, db: Database):
     embed = sent_kwargs(interaction.response.send_message)["embed"]
     assert embed.title == "⚙️ Configuración de Vapora"
     assert embed.fields[0].value.startswith("<#100>")
+
+
+async def test_config_wallpaper_channel(bot: FakeBot, db: Database):
+    cog = SettingsCog(bot)  # type: ignore[arg-type]
+    interaction = make_interaction(guild_id=GUILD)
+    await cog.set_channel.callback(cog, interaction, choice(Feature.WALLPAPERS), text_channel(400))
+    assert sent_text(interaction.response.send_message) == (
+        "✅ **🖼️ Fondo del día** → <#400>\nVoy a publicar un fondo en tendencia todos los días a las 18:00."
+    )
+    assert await db.channels(GUILD) == {Feature.WALLPAPERS: 400}
+    bot.dispatch.assert_not_called()

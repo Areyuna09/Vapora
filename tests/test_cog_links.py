@@ -2,12 +2,13 @@ from unittest.mock import MagicMock
 
 import discord
 import pytest
-from fakes import AUTUMN_SALE, FakeBot, FakeSteam, make_message, sent_kwargs
+from fakes import AUTUMN_SALE, FakeBot, FakeSteam, FakeWorkshop, make_message, sent_kwargs
 from helpers import make_item
 
 from vapora.cogs.links import LinksCog
 from vapora.pricing import ExchangeRates
 from vapora.steam import ItemKind
+from vapora.steam.workshop import Wallpaper
 from vapora.storage import Database
 from vapora.ui.buttons import WishButton
 
@@ -112,3 +113,56 @@ async def test_failed_reply_keeps_the_original_preview(bot: FakeBot):
     message.reply.side_effect = discord.Forbidden(MagicMock(status=403), "sin permiso para escribir")
     await LinksCog(bot).on_message(message)  # type: ignore[arg-type]  # no propaga
     message.edit.assert_not_awaited()  # si no hay tarjeta, que al menos quede el preview de Discord
+
+
+# ── Fondos de Wallpaper Engine ────────────────────────────────────────────────
+
+WALLPAPER = Wallpaper(3594441070, "Nikke", "https://img/nikke.gif", ("Anime", "Everyone", "Web"), 5265, 404)
+WORKSHOP_LINK = "https://steamcommunity.com/sharedfiles/filedetails/?id=3594441070"
+
+
+async def test_replies_to_a_wallpaper_link_with_its_card(bot: FakeBot):
+    bot.workshop = FakeWorkshop(WALLPAPER)
+    message = make_message(f"miren este fondo {WORKSHOP_LINK}")
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    (card,) = reply["embeds"]
+    assert card.title == "🖼️ Nikke"
+    assert card.image.url == "https://img/nikke.gif"
+    assert [button.label for button in reply["view"].children] == [
+        "🖼️ Ver en Steam",
+        "🛒 Conseguir Wallpaper Engine",
+    ]
+    message.edit.assert_awaited_once_with(suppress=True)
+
+
+async def test_wallpaper_that_cannot_be_shown_gets_no_reply(bot: FakeBot):
+    bot.workshop = FakeWorkshop()  # +18 u otro juego: el cliente devuelve None
+    message = make_message(WORKSHOP_LINK)
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    message.reply.assert_not_awaited()
+    message.edit.assert_not_awaited()
+
+
+async def test_game_and_wallpaper_links_in_one_message(bot: FakeBot):
+    bot.workshop = FakeWorkshop(WALLPAPER)
+    message = make_message(f"{LINK} {WORKSHOP_LINK}")
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    assert [card.title for card in reply["embeds"]] == ["🇦🇷 Hollow Knight", "🖼️ Nikke"]
+    rows = {}
+    for child in reply["view"].children:
+        item = child.item if isinstance(child, WishButton) else child
+        rows.setdefault(item.row, []).append(item.label)
+    assert rows == {
+        0: ["🔔 Avisame si baja", "🌐 Abrir en el navegador"],
+        1: ["🖼️ Ver en Steam", "🛒 Conseguir Wallpaper Engine"],
+    }
+
+
+async def test_workshop_down_does_not_block_game_cards(bot: FakeBot):
+    bot.workshop = FakeWorkshop(WALLPAPER)
+    bot.workshop.down = True
+    message = make_message(f"{LINK} {WORKSHOP_LINK}")
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    assert [card.title for card in sent_kwargs(message.reply)["embeds"]] == ["🇦🇷 Hollow Knight"]

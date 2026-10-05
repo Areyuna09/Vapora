@@ -43,16 +43,23 @@ class FakeSession:
 
     def __init__(self, routes: dict[str, Any] | None = None) -> None:
         self.routes = routes or {}
-        self.calls: list[tuple[str, dict[str, str]]] = []
+        self.calls: list[tuple[str, Any]] = []
 
-    def get(self, url: str, params: dict[str, str] | None = None) -> FakeResponse:
-        self.calls.append((url, params or {}))
+    def get(self, url: str, params: Any = None) -> FakeResponse:
+        """`params` puede ser un dict o una lista de pares (para parámetros repetidos)."""
+        return self._respond(url, params or {})
+
+    def post(self, url: str, data: dict[str, str] | None = None) -> FakeResponse:
+        return self._respond(url, data or {})
+
+    def _respond(self, url: str, params: Any) -> FakeResponse:
+        self.calls.append((url, params))
         for fragment, payload in self.routes.items():
             if fragment in url:
                 if isinstance(payload, Exception):
                     raise payload
                 if callable(payload):
-                    payload = payload(params or {})
+                    payload = payload(params)
                 return FakeResponse(payload)
         return FakeResponse({}, status=404)
 

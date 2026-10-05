@@ -87,11 +87,13 @@ def test_help_explains_prices_with_the_configured_iva():
 
 
 def test_config_embed_lists_every_feature():
-    embed = build_config_embed({Feature.DEALS: 100, Feature.WISHLIST: 300}, deals_hour=12)
+    channels = {Feature.DEALS: 100, Feature.WISHLIST: 300, Feature.WALLPAPERS: 400}
+    embed = build_config_embed(channels, deals_hour=12, wallpaper_hour=18)
     assert [(field.name, field.value) for field in embed.fields] == [
         ("🔥 Ofertas destacadas", "<#100>\nTodos los días a las 12:00 (hora argentina)"),
         ("📅 Avisos de rebajas", "Desactivado"),
         ("🔔 Avisos de deseados", "<#300>"),
+        ("🖼️ Fondo del día", "<#400>\nTodos los días a las 18:00 (hora argentina)"),
     ]
 
 

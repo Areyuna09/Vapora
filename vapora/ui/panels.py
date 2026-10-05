@@ -15,6 +15,7 @@ FEATURE_LABELS = {
     Feature.DEALS: "🔥 Ofertas destacadas",
     Feature.SALES: "📅 Avisos de rebajas",
     Feature.WISHLIST: "🔔 Avisos de deseados",
+    Feature.WALLPAPERS: "🖼️ Fondo del día",
 }
 
 
@@ -29,7 +30,8 @@ def build_help_embed(*, is_admin: bool, taxes: Taxes, rates_refresh_minutes: int
         name="🔗 Pegá un link de Steam",
         value="Mandá un link de la tienda en cualquier canal y respondo con el precio en USD, "
         "💳 Mercado Pago y 🟣 ARQ, reseñas y más. Funciona con juegos, DLC, paquetes y bundles. "
-        "Si el juego es argentino, lo marco con 🧉",
+        "Si el juego es argentino, lo marco con 🧉\n"
+        "También muestro los fondos de Wallpaper Engine del Workshop 🖼️",
         inline=False,
     )
     embed.add_field(
@@ -39,13 +41,15 @@ def build_help_embed(*, is_admin: bool, taxes: Taxes, rates_refresh_minutes: int
         "`/deseado agregar` · sumá un juego a tu lista (o tocá 🔔 en una tarjeta) "
         "y te aviso cuando entre en oferta\n"
         "`/deseado lista` · `/deseado quitar` · ver o sacar juegos de tu lista\n"
+        "`/fondo` · un fondo de Wallpaper Engine en tendencia (podés elegir categoría)\n"
         "`/ayuda` · este mensaje",
         inline=False,
     )
     if is_admin:
         embed.add_field(
             name="⚙️ Administración",
-            value="`/config canal` · elegir dónde publico ofertas diarias, avisos de rebajas y de deseados\n"
+            value="`/config canal` · elegir dónde publico ofertas diarias, avisos de rebajas, "
+            "de deseados y el fondo del día\n"
             "`/config ver` · ver la configuración del servidor\n"
             "`/config desactivar` · dejar de publicar algo",
             inline=False,
@@ -61,14 +65,17 @@ def build_help_embed(*, is_admin: bool, taxes: Taxes, rates_refresh_minutes: int
     return embed
 
 
-def build_config_embed(channels: Mapping[Feature, int], deals_hour: int) -> discord.Embed:
+def build_config_embed(
+    channels: Mapping[Feature, int], deals_hour: int, wallpaper_hour: int
+) -> discord.Embed:
     """Dónde publica Vapora cada tipo de aviso en un servidor."""
     embed = discord.Embed(title="⚙️ Configuración de Vapora", color=BRAND_COLOR)
+    daily_hours = {Feature.DEALS: deals_hour, Feature.WALLPAPERS: wallpaper_hour}
     for feature, label in FEATURE_LABELS.items():
         channel_id = channels.get(feature)
         value = f"<#{channel_id}>" if channel_id else "Desactivado"
-        if feature is Feature.DEALS and channel_id:
-            value += f"\nTodos los días a las {deals_hour}:00 (hora argentina)"
+        if feature in daily_hours and channel_id:
+            value += f"\nTodos los días a las {daily_hours[feature]}:00 (hora argentina)"
         embed.add_field(name=label, value=value, inline=False)
     embed.set_footer(text="Cambialo con /config canal · Desactivalo con /config desactivar")
     return embed

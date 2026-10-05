@@ -44,6 +44,7 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 - 🔥 **Ofertas destacadas**: `/ofertas` o todos los días en el canal que elijas, con precio en pesos.
 - 🔔 **Deseados**: cada uno arma su lista con `/deseado` o con el botón **Avisame si baja** de cada tarjeta, y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
 - 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
+- 🖼️ **Fondos de Wallpaper Engine**: `/fondo` recomienda uno en tendencia (con categoría opcional), hay un fondo del día en el canal que elijas, y los links del Workshop se muestran con su vista previa (animada si es un GIF). Solo fondos aptos para todo público.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
 - 🎨 **Color de temporada**: durante una rebaja de Steam, las tarjetas toman su color (naranja en otoño, celeste hielo en invierno, rosa en primavera y amarillo en verano).
 - 💸 **Precio en pesos** con los impuestos vigentes, según el medio de pago.
@@ -95,8 +96,9 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 | `/rebajas` | Rebaja actual y próximas, con cuenta regresiva | Todos |
 | `/deseado agregar` | Agregar un juego a tus deseados (por nombre o link) | Todos |
 | `/deseado lista` · `/deseado quitar` | Ver o sacar juegos de tus deseados (de la lista o por nombre) | Todos |
+| `/fondo` | Un fondo de Wallpaper Engine en tendencia (categoría opcional) | Todos |
 | `/ayuda` | Qué hace Vapora y cómo usarla | Todos |
-| `/config canal` | Elegir el canal de las ofertas diarias, los avisos de rebajas o los avisos de deseados | Admins* |
+| `/config canal` | Elegir el canal de las ofertas diarias, los avisos de rebajas, los avisos de deseados o el fondo del día | Admins* |
 | `/config desactivar` | Dejar de publicar ofertas o avisos | Admins* |
 | `/config ver` | Ver la configuración del servidor | Admins* |
 
@@ -104,7 +106,7 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 
 Cada servidor elige sus propios canales. Se guardan en una base **SQLite** (`data/vapora.db`) junto con los avisos ya enviados y las listas de deseados.
 
-Las ofertas diarias salen una vez por día en cada servidor. Si Vapora se reinicia (por ejemplo, con un deploy) hasta 6 horas después de `DEALS_HOUR` y todavía no las publicó, las publica apenas se conecta.
+Las ofertas diarias y el fondo del día salen una vez por día en cada servidor. Si Vapora se reinicia (por ejemplo, con un deploy) hasta 6 horas después de `DEALS_HOUR` o `WALLPAPER_HOUR` y todavía no publicó, publica apenas se conecta.
 
 Los deseados se revisan cada hora, pidiendo a Steam solo los precios y de a 100 juegos por pedido. Vapora avisa **una vez por oferta** (y otra si el precio baja más) en el canal elegido con `/config canal` → *Avisos de deseados*, mencionando a cada persona. Si el servidor no eligió canal, avisa por MD.
 
@@ -119,10 +121,13 @@ Todo se configura en el archivo `.env` (ver [`.env.example`](.env.example)):
 | `PROVINCE_TAX_PERCENT` | `0` | Ingresos Brutos de tu provincia (ej. `2` en CABA/PBA) |
 | `EXCHANGE_RATE_TTL_SECONDS` | `1800` | Cada cuánto se actualiza la cotización |
 | `DEALS_HOUR` | `12` | Hora de Argentina a la que se publican las ofertas del día |
+| `WALLPAPER_HOUR` | `18` | Hora de Argentina a la que se publica el fondo del día |
 | `DATABASE_FILE` | `data/vapora.db` | Archivo de la base de datos SQLite |
 
 > [!TIP]
 > Las fechas de las rebajas se leen una vez por día del [calendario oficial de Steamworks](https://partner.steamgames.com/doc/marketing/upcoming_events). Valve no las publica en una API, así que Vapora interpreta esa página; si el formato cambia, usa la lista de respaldo de [`vapora/sales.py`](vapora/sales.py) y lo avisa en los logs.
+>
+> Con los fondos pasa algo parecido: sin API key, Steam no permite buscar en el Workshop, así que la lista de tendencias se lee de la [página pública](https://steamcommunity.com/app/431960/workshop/) (cada 6 horas por categoría) y los datos de cada fondo salen de la API pública. Si la página cambia, `/fondo` responde que no encontró fondos y lo avisa en los logs; el resto del bot sigue igual.
 
 ## 🗄️ Base de datos
 
@@ -179,17 +184,20 @@ La versión de Python se fija en [`.python-version`](.python-version).
 │   │   ├── models.py       #   modelos (StoreItem, Price, Deal…)
 │   │   ├── links.py        #   detección de links en un mensaje
 │   │   ├── parsers.py      #   respuestas de Steam → modelos (funciones puras)
-│   │   └── client.py       #   SteamClient: pedidos y caché
+│   │   ├── client.py       #   SteamClient: pedidos y caché
+│   │   └── workshop.py     #   fondos de Wallpaper Engine del Workshop
 │   ├── ui/                 # Lo que se ve en Discord
 │   │   ├── game_card.py    #   tarjeta de un juego
+│   │   ├── wallpaper_card.py # tarjeta de un fondo
 │   │   ├── announcements.py#   ofertas y avisos de rebajas
 │   │   ├── panels.py       #   /ayuda, /config y /deseado
 │   │   ├── buttons.py      #   botones de las tarjetas
 │   │   └── formatting.py   #   formato de precios
 │   └── cogs/               # Comandos, eventos y tareas, por función
-│       ├── links.py        #   responde a los links de Steam
+│       ├── links.py        #   responde a los links de Steam y del Workshop
 │       ├── deals.py        #   /ofertas, /rebajas y sus publicaciones
 │       ├── wishlist.py     #   /deseado y avisos de ofertas
+│       ├── wallpapers.py   #   /fondo y el fondo del día
 │       ├── settings.py     #   /config
 │       └── general.py      #   /ayuda
 └── tests/                  # Tests con pytest

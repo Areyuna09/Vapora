@@ -185,6 +185,8 @@ async def test_version_1_database_is_upgraded_keeping_its_data(tmp_path: Path):
     assert await database.channels(10) == {Feature.DEALS: 100}
     assert await database.wishlist(5) == [Wish(5, 367520, "Hollow Knight", None, None)]
     assert await database.guilds_posted_on(Feature.DEALS, date(2026, 10, 5)) == set()
+    await database.set_channel(10, Feature.WALLPAPERS, 400)  # la v3 acepta el tipo nuevo
+    assert await database.channels(10) == {Feature.DEALS: 100, Feature.WALLPAPERS: 400}
     with sqlite3.connect(path) as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
     conn.close()
@@ -227,12 +229,12 @@ async def test_daily_posts_are_tracked_per_guild_feature_and_day(db: Database):
     today, tomorrow = date(2026, 10, 5), date(2026, 10, 6)
     await db.mark_posted(10, Feature.DEALS, today)
     await db.mark_posted(11, Feature.DEALS, today)
-    await db.mark_posted(10, Feature.SALES, today)
+    await db.mark_posted(10, Feature.WALLPAPERS, today)
     assert await db.guilds_posted_on(Feature.DEALS, today) == {10, 11}
     await db.mark_posted(10, Feature.DEALS, tomorrow)
     assert await db.guilds_posted_on(Feature.DEALS, today) == {11}
     assert await db.guilds_posted_on(Feature.DEALS, tomorrow) == {10}
-    assert await db.guilds_posted_on(Feature.SALES, today) == {10}  # cada tipo por separado
+    assert await db.guilds_posted_on(Feature.WALLPAPERS, today) == {10}  # cada tipo por separado
 
 
 # ── Límite de deseados con pedidos simultáneos ────────────────────────────────

@@ -29,6 +29,9 @@ class Settings:
     # Hora (de Argentina) a la que se publican las ofertas destacadas del día.
     deals_hour: int = 12
 
+    # Hora (de Argentina) a la que se publica el fondo del día de Wallpaper Engine.
+    wallpaper_hour: int = 18
+
     # Base de datos SQLite con los canales de /config, los avisos enviados y los deseados.
     database_file: Path = Path("data/vapora.db")
 
@@ -48,10 +51,6 @@ class Settings:
             raise ConfigError("Falta DISCORD_TOKEN (en el archivo .env o como variable de entorno).")
 
         defaults = cls(discord_token=token)
-        deals_hour = int(_number(env, "DEALS_HOUR", defaults.deals_hour))
-        if not 0 <= deals_hour <= 23:
-            raise ConfigError(f"DEALS_HOUR debe estar entre 0 y 23 (es {deals_hour}).")
-
         return cls(
             discord_token=token,
             taxes=Taxes(
@@ -61,10 +60,19 @@ class Settings:
             exchange_rate_ttl_seconds=int(
                 _number(env, "EXCHANGE_RATE_TTL_SECONDS", defaults.exchange_rate_ttl_seconds)
             ),
-            deals_hour=deals_hour,
+            deals_hour=_hour(env, "DEALS_HOUR", defaults.deals_hour),
+            wallpaper_hour=_hour(env, "WALLPAPER_HOUR", defaults.wallpaper_hour),
             database_file=Path(env.get("DATABASE_FILE") or defaults.database_file),
             legacy_state_file=Path(env.get("STATE_FILE") or defaults.legacy_state_file),
         )
+
+
+def _hour(env: Mapping[str, str], name: str, default: int) -> int:
+    """Lee una hora del día (0 a 23) del entorno."""
+    hour = int(_number(env, name, default))
+    if not 0 <= hour <= 23:
+        raise ConfigError(f"{name} debe estar entre 0 y 23 (es {hour}).")
+    return hour
 
 
 def _number(env: Mapping[str, str], name: str, default: float) -> float:

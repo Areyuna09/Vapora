@@ -14,6 +14,7 @@ from vapora.config import Settings
 from vapora.pricing import ExchangeRates, PesoConverter
 from vapora.sales import AUTUMN_COLOR, SteamSale
 from vapora.steam import Deal, ItemKind, ItemRef, Price, SearchResult, SteamError, StoreItem
+from vapora.steam.workshop import CATEGORIES, Wallpaper
 from vapora.storage import Database
 
 AUTUMN_SALE = SteamSale("Rebajas de Otoño", date(2026, 10, 1), date(2026, 10, 8), "🍂", AUTUMN_COLOR)
@@ -61,6 +62,29 @@ class FakeSteam:
             raise SteamError("Steam caído (simulado)")
 
 
+class FakeWorkshop:
+    """Workshop de Wallpaper Engine en memoria. `down = True` simula que Steam no responde."""
+
+    def __init__(self, *wallpapers: Wallpaper) -> None:
+        self.wallpapers = list(wallpapers)
+        self.down = False
+        self.trending_requests: list[str | None] = []
+
+    async def trending(self, category: str | None = None) -> Sequence[Wallpaper]:
+        self._check()
+        self.trending_requests.append(category)
+        tag = CATEGORIES[category][1] if category else None
+        return [wallpaper for wallpaper in self.wallpapers if tag is None or tag in wallpaper.tags]
+
+    async def get(self, wallpaper_id: int) -> Wallpaper | None:
+        self._check()
+        return next((wallpaper for wallpaper in self.wallpapers if wallpaper.id == wallpaper_id), None)
+
+    def _check(self) -> None:
+        if self.down:
+            raise SteamError("Steam caído (simulado)")
+
+
 class FakeCalendar:
     def __init__(self, sales: Sequence[SteamSale] = (AUTUMN_SALE,)) -> None:
         self._sales = sales
@@ -75,6 +99,7 @@ class FakeBot:
     def __init__(self, db: Database, steam: FakeSteam | None = None) -> None:
         self.db = db
         self.steam = steam or FakeSteam()
+        self.workshop = FakeWorkshop()
         self.calendar = FakeCalendar()
         self.settings = Settings(discord_token="test")
         self.rates = ExchangeRates(official=1550.0, crypto=1623.44)
@@ -95,6 +120,7 @@ class FakeBot:
     def add_channel(self, channel_id: int) -> MagicMock:
         """Registra un canal donde el bot puede publicar; devuelve el canal para inspeccionarlo."""
         channel = MagicMock(name=f"channel-{channel_id}")
+        channel.id = channel_id
         channel.send = AsyncMock()
         self.channels[channel_id] = channel
         return channel

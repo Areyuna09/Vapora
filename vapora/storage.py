@@ -39,6 +39,7 @@ class Feature(StrEnum):
     DEALS = "ofertas"
     SALES = "rebajas"
     WISHLIST = "deseados"
+    WALLPAPERS = "fondos"
 
 
 class AddWishResult(Enum):
@@ -98,6 +99,22 @@ MIGRATIONS: tuple[str, ...] = (
         last_posted  TEXT    NOT NULL,  -- fecha (Argentina) en formato ISO: 2026-10-05
         PRIMARY KEY (guild_id, feature)
     );
+    """,
+    # v3: suma el tipo de aviso 'fondos'. SQLite no deja cambiar un CHECK, así que se rehace
+    # la tabla con los mismos datos. Para deshacerlo alcanza con borrar las filas 'fondos':
+    # las versiones anteriores del bot ignoran los tipos que no conocen.
+    """
+    CREATE TABLE guild_channels_v3 (
+        guild_id    INTEGER NOT NULL,
+        feature     TEXT    NOT NULL CHECK (feature IN ('ofertas', 'rebajas', 'deseados', 'fondos')),
+        channel_id  INTEGER NOT NULL,
+        updated_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, feature)
+    );
+    INSERT INTO guild_channels_v3 (guild_id, feature, channel_id, updated_at)
+        SELECT guild_id, feature, channel_id, updated_at FROM guild_channels;
+    DROP TABLE guild_channels;
+    ALTER TABLE guild_channels_v3 RENAME TO guild_channels;
     """,
 )
 

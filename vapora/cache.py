@@ -42,6 +42,10 @@ class TTLCache(Generic[K, V]):
         # shield: si cancelan a uno de los que esperan, el pedido sigue para los demás.
         return await asyncio.shield(task)
 
+    def put(self, key: K, value: V) -> None:
+        """Guarda un valor que se consiguió por otro lado (por ejemplo, en un pedido de varios)."""
+        self._store(key, value)
+
     async def _fetch_and_store(self, key: K, fetch: Callable[[], Awaitable[V]]) -> V:
         value = await fetch()
         self._store(key, value)

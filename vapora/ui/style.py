@@ -6,6 +6,7 @@ from vapora.sales import SteamSale
 
 BRAND_COLOR = discord.Color(0x74ACDF)  # celeste de la bandera argentina
 DEALS_COLOR = discord.Color(0xE8A33D)  # naranja de oferta
+WALLPAPER_COLOR = discord.Color(0x9B59B6)  # violeta, para distinguir los fondos de los juegos
 
 CARD_PAYMENT_LABEL = "💳 Mercado Pago"
 CRYPTO_PAYMENT_LABEL = "🟣 ARQ"

@@ -12,6 +12,7 @@ def test_defaults():
     assert settings.taxes == Taxes(iva_percent=21.0, province_percent=0.0)
     assert settings.exchange_rate_ttl_seconds == 1800
     assert settings.deals_hour == 12
+    assert settings.wallpaper_hour == 18
     assert settings.database_file == Path("data/vapora.db")
     assert settings.legacy_state_file == Path("data/state.json")
 
@@ -24,6 +25,7 @@ def test_values_from_environment():
             "PROVINCE_TAX_PERCENT": "2",
             "EXCHANGE_RATE_TTL_SECONDS": "600",
             "DEALS_HOUR": "9",
+            "WALLPAPER_HOUR": "20",
             "DATABASE_FILE": "/app/data/otra.db",
         }
     )
@@ -31,6 +33,7 @@ def test_values_from_environment():
     assert settings.taxes == Taxes(iva_percent=10.5, province_percent=2.0)
     assert settings.exchange_rate_ttl_seconds == 600
     assert settings.deals_hour == 9
+    assert settings.wallpaper_hour == 20
     assert settings.database_file == Path("/app/data/otra.db")
 
 
@@ -59,3 +62,9 @@ def test_deals_hour_must_be_a_valid_hour():
 
 def test_token_never_appears_in_repr():
     assert "secreto" not in repr(Settings(discord_token="secreto"))
+
+
+@pytest.mark.parametrize("value", ["24", "-1"])
+def test_wallpaper_hour_must_be_a_valid_hour(value: str):
+    with pytest.raises(ConfigError, match="WALLPAPER_HOUR"):
+        Settings.from_env({"DISCORD_TOKEN": "abc", "WALLPAPER_HOUR": value})
