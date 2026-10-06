@@ -126,3 +126,14 @@ def test_normal_shutdown_does_not_retry(sleeps: list[float]):
     FakeBot.outcomes = [None]
     main_module.run_until_stopped(Settings(discord_token="test"))
     assert FakeBot.runs == 1
+
+
+def test_logged_bans_are_recorded_for_the_monitor(monkeypatch: pytest.MonkeyPatch):
+    from vapora import discord_errors
+
+    tracker = discord_errors.BanTracker()
+    monkeypatch.setattr(discord_errors, "ban_tracker", tracker)
+    CompactCloudflareBans().filter(_record(RuntimeError("otra cosa")))
+    assert not tracker.seen_within(60)
+    CompactCloudflareBans().filter(_record(BAN))
+    assert tracker.seen_within(60)

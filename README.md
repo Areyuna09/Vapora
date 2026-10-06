@@ -122,6 +122,7 @@ Todo se configura en el archivo `.env` (ver [`.env.example`](.env.example)):
 | `EXCHANGE_RATE_TTL_SECONDS` | `1800` | Cada cuánto se actualiza la cotización |
 | `DEALS_HOUR` | `12` | Hora de Argentina a la que se publican las ofertas del día |
 | `WALLPAPER_HOUR` | `18` | Hora de Argentina a la que se publica el fondo del día |
+| `HEALTHCHECK_URL` | — | URL del monitor externo para el latido (opcional, ver *En producción*) |
 | `DATABASE_FILE` | `data/vapora.db` | Archivo de la base de datos SQLite |
 
 > [!TIP]
@@ -211,6 +212,13 @@ Discord bloquea toda una IP (error 1015 de Cloudflare) si recibe más de 10.000 
 
 - **Si la IP ya está bloqueada al arrancar**, espera 15, 30 y después 60 minutos entre intentos sin cerrarse, así no entra en un bucle de reinicios que alargaría el bloqueo. Esos errores quedan en una línea en el log.
 - **No manda pedidos que Discord va a rechazar**: revisa los permisos antes de responder un link, ocultar su preview, publicar en un canal configurado o adjuntar una vista previa, y no reintenta avisos por MD a quien los tiene cerrados.
+- **Monitoreo (opcional)**: con `HEALTHCHECK_URL`, Vapora manda un latido cada 5 minutos a un monitor externo. Si deja de llegar (se cayó, o espera por un bloqueo), o si Vapora detecta un bloqueo, el monitor te avisa por mail. No se usa Discord para esto porque, con la IP bloqueada, ese aviso tampoco saldría.
+
+Para activar el monitoreo con [healthchecks.io](https://healthchecks.io) (gratis):
+
+1. Creá un *check* con **Period** de 5 minutos y **Grace** de 10 minutos.
+2. Copiá su *ping URL* (`https://hc-ping.com/...`) en la variable `HEALTHCHECK_URL` de Railway.
+3. En *Integrations*, dejá activado el aviso por mail.
 
 ## 🔒 Seguridad
 

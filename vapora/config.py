@@ -38,6 +38,12 @@ class Settings:
     # JSON que se usaba antes de la base de datos: si existe, se importa una vez y se renombra.
     legacy_state_file: Path = Path("data/state.json")
 
+    # URL de un monitor externo (por ejemplo, healthchecks.io) que recibe un latido cada
+    # pocos minutos y avisa por mail si deja de llegar. Sin URL, no hay monitoreo.
+    healthcheck_url: str | None = field(
+        default=None, repr=False
+    )  # quien la tenga puede mandar latidos falsos
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
         """Arma la configuración a partir del entorno.
@@ -64,7 +70,18 @@ class Settings:
             wallpaper_hour=_hour(env, "WALLPAPER_HOUR", defaults.wallpaper_hour),
             database_file=Path(env.get("DATABASE_FILE") or defaults.database_file),
             legacy_state_file=Path(env.get("STATE_FILE") or defaults.legacy_state_file),
+            healthcheck_url=_https_url(env, "HEALTHCHECK_URL"),
         )
+
+
+def _https_url(env: Mapping[str, str], name: str) -> str | None:
+    """Lee una URL HTTPS del entorno (opcional)."""
+    url = env.get(name, "").strip()
+    if not url:
+        return None
+    if not url.startswith("https://"):
+        raise ConfigError(f"{name} debe ser una URL https:// (es {url!r}).")
+    return url.rstrip("/")
 
 
 def _hour(env: Mapping[str, str], name: str, default: int) -> int:

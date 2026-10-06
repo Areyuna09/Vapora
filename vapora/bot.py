@@ -12,12 +12,13 @@ from discord.ext import commands
 
 from vapora.cogs.deals import DealsCog
 from vapora.cogs.general import GeneralCog
+from vapora.cogs.health import HealthCog
 from vapora.cogs.links import LinksCog
 from vapora.cogs.settings import SettingsCog
 from vapora.cogs.wallpapers import WallpapersCog
 from vapora.cogs.wishlist import WishlistCog
 from vapora.config import Settings
-from vapora.discord_errors import BAN_SUMMARY, is_cloudflare_ban
+from vapora.discord_errors import BAN_SUMMARY, ban_tracker, is_cloudflare_ban
 from vapora.permissions import missing_send_permissions
 from vapora.previews import PreviewEnlarger
 from vapora.pricing import DollarClient, PesoConverter
@@ -32,7 +33,7 @@ log = logging.getLogger(__name__)
 
 STATUS_TEXT = "Precios de Steam 🇦🇷"  # se ve debajo del nombre en la lista de miembros
 HTTP_TIMEOUT_SECONDS = 15
-COGS = (LinksCog, DealsCog, WishlistCog, WallpapersCog, SettingsCog, GeneralCog)
+COGS = (LinksCog, DealsCog, WishlistCog, WallpapersCog, SettingsCog, GeneralCog, HealthCog)
 
 
 class VaporaTree(app_commands.CommandTree["VaporaBot"]):
@@ -101,6 +102,12 @@ class VaporaBot(commands.Bot):
         if self._session is not None:
             await self._session.close()
 
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """Sesión HTTP compartida (existe desde `setup_hook`)."""
+        assert self._session is not None, "la sesión se crea en setup_hook"
+        return self._session
+
     async def peso_converter(self) -> PesoConverter:
         """Conversor a pesos con las cotizaciones del momento y los impuestos configurados."""
         return PesoConverter(await self.dollar.rates(), self.settings.taxes)
@@ -162,6 +169,7 @@ class VaporaBot(commands.Bot):
         cause = getattr(error, "original", error)
         if is_cloudflare_ban(cause):
             # Avisarle al usuario también fallaría, y sería un pedido más con la IP bloqueada.
+            ban_tracker.record()
             log.error("No pude responder /%s: %s", _command_name(interaction), BAN_SUMMARY)
             return
         if isinstance(error, app_commands.CommandOnCooldown):

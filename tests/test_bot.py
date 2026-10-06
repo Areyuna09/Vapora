@@ -208,3 +208,8 @@ async def test_find_channel_skips_channels_where_vapora_cannot_post(
 
     channel.permissions_for.return_value.send_messages = True  # le devolvieron el permiso
     assert bot.find_channel(100) is channel
+
+
+async def test_heartbeat_cog_is_loaded(bot: VaporaBot):
+    assert bot.get_cog("HealthCog") is not None
+    assert bot.session is bot._session

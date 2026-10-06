@@ -6,6 +6,7 @@ import itertools
 import logging
 import sys
 import time
+import urllib.request
 
 import discord
 from dotenv import load_dotenv
@@ -48,7 +49,23 @@ def run_until_stopped(settings: Settings) -> None:
                 raise
             minutes = BAN_RETRY_MINUTES[min(attempt, len(BAN_RETRY_MINUTES) - 1)]
             log.error("%s al iniciar sesión. Reintento en %d minutos.", BAN_SUMMARY, minutes)
+            report_failure(settings.healthcheck_url)
             time.sleep(minutes * 60)
+
+
+def report_failure(healthcheck_url: str | None) -> None:
+    """Avisa al monitor externo que Vapora no puede conectarse (si hay uno configurado).
+
+    Sin esto, el monitor igual avisaría al dejar de recibir latidos, pero más tarde.
+    """
+    if not healthcheck_url:
+        return
+    try:
+        # La URL es https:// (se valida en config), así que urlopen no puede abrir archivos locales.
+        with urllib.request.urlopen(f"{healthcheck_url}/fail", timeout=10):
+            pass
+    except OSError:
+        log.warning("No pude avisarle la falla al monitor", exc_info=True)
 
 
 if __name__ == "__main__":

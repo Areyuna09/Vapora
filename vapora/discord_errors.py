@@ -11,6 +11,8 @@ el bloqueo puede venir de otro. Mientras dura, cualquier pedido a Discord falla.
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 
 import discord
 
@@ -38,16 +40,36 @@ def _is_cloudflare_page(text: str) -> bool:
     return "cloudflare" in lowered or "error 1015" in lowered
 
 
+class BanTracker:
+    """Recuerda cuándo se vio el último bloqueo, para el monitoreo (ver `cogs/health.py`)."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._last_seen: float | None = None
+
+    def record(self) -> None:
+        self._last_seen = self._clock()
+
+    def seen_within(self, seconds: float) -> bool:
+        return self._last_seen is not None and self._clock() - self._last_seen < seconds
+
+
+# Uno solo para todo el proceso: los bloqueos aparecen en cualquier parte del bot.
+ban_tracker = BanTracker()
+
+
 class CompactCloudflareBans(logging.Filter):
-    """Resume en una línea los errores que son un bloqueo de Cloudflare.
+    """Resume en una línea los errores que son un bloqueo de Cloudflare, y los registra.
 
     Sin esto, cada error vuelca la página HTML entera (decenas de líneas), llena el límite
-    de logs de Railway y tapa lo que sirve para entender qué pasó.
+    de logs de Railway y tapa lo que sirve para entender qué pasó. Como todos esos errores
+    pasan por acá, también es el lugar donde se anotan en `ban_tracker`.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
         error = record.exc_info[1] if record.exc_info else None
         if is_cloudflare_ban(error):
+            ban_tracker.record()
             record.msg = f"{record.getMessage()} · {BAN_SUMMARY}"
             record.args = None
             record.exc_info = None
