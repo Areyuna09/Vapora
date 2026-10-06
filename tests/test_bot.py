@@ -115,3 +115,14 @@ async def test_unexpected_command_error_gets_a_generic_reply(bot: VaporaBot):
     interaction.response.send_message.assert_awaited_once_with(
         "😕 Algo salió mal. Probá de nuevo en un rato.", ephemeral=True
     )
+
+
+async def test_command_error_from_a_cloudflare_ban_does_not_try_to_reply(bot: VaporaBot):
+    """Responder también fallaría y sería un pedido más con la IP bloqueada."""
+    ban = discord.HTTPException(
+        MagicMock(status=429, reason="Too Many Requests"), "<html>Cloudflare 1015</html>"
+    )
+    interaction = failing_interaction(already_answered=False)
+    await bot.tree.on_error(interaction, app_commands.CommandInvokeError(MagicMock(), ban))
+    interaction.response.send_message.assert_not_awaited()
+    interaction.followup.send.assert_not_awaited()

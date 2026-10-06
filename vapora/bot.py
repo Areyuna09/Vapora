@@ -17,6 +17,7 @@ from vapora.cogs.settings import SettingsCog
 from vapora.cogs.wallpapers import WallpapersCog
 from vapora.cogs.wishlist import WishlistCog
 from vapora.config import Settings
+from vapora.discord_errors import BAN_SUMMARY, is_cloudflare_ban
 from vapora.previews import PreviewEnlarger
 from vapora.pricing import DollarClient, PesoConverter
 from vapora.sales import SalesCalendar, SteamSale, active_sale
@@ -118,6 +119,10 @@ class VaporaBot(commands.Bot):
     ) -> None:
         """Le avisa al usuario que algo falló, en vez de dejar el comando colgado."""
         cause = getattr(error, "original", error)
+        if is_cloudflare_ban(cause):
+            # Avisarle al usuario también fallaría, y sería un pedido más con la IP bloqueada.
+            log.error("No pude responder /%s: %s", _command_name(interaction), BAN_SUMMARY)
+            return
         if isinstance(cause, SteamError):
             log.warning("Steam no respondió durante /%s", _command_name(interaction), exc_info=cause)
             text = "😕 Steam no está respondiendo. Probá de nuevo en un rato."
