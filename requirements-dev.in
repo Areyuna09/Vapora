@@ -1,0 +1,9 @@
+# Herramientas de desarrollo. Se generan con las mismas versiones del bot (-c):
+#   python -m uv pip compile requirements-dev.in --universal --generate-hashes --python-version 3.12 -o requirements-dev.txt
+-r requirements.in
+-c requirements.txt
+pytest>=8,<9
+pytest-asyncio>=0.24,<2
+ruff>=0.6
+mypy>=1.11
+uv>=0.4  # genera los requirements.txt con hashes

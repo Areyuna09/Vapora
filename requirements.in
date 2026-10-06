@@ -1,0 +1,8 @@
+# Dependencias de Vapora, con rangos de versión. Esto es lo que se edita a mano.
+# El bot se instala desde requirements.txt (versiones exactas con hashes), que se genera así:
+#   python -m uv pip compile requirements.in --universal --generate-hashes --python-version 3.12 -o requirements.txt
+discord.py>=2.6,<3
+aiohttp>=3.10,<4
+python-dotenv>=1.0,<2
+pillow>=11,<13  # agrandar las vistas previas animadas de los fondos
+tzdata>=2024.1  # zonas horarias en Windows (rebajas de Steam en hora del Pacífico)

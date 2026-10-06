@@ -71,7 +71,7 @@ git clone https://github.com/<tu-usuario>/vapora.git
 cd vapora
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.txt
 Copy-Item .env.example .env   # y pegá tu token adentro
 python bot.py
 ```
@@ -139,13 +139,14 @@ Vapora usa **SQLite** (viene con Python, no hay que instalar nada). En Railway, 
 | `guild_channels` | Canal elegido con `/config` para cada tipo de aviso de cada servidor |
 | `sent_announcements` | Avisos de rebajas ya enviados, para no repetirlos |
 | `wishlist` | Deseados de cada persona y a qué precio se avisó la última oferta |
+| `daily_posts` | Qué día se hizo cada publicación diaria (ofertas, fondo del día) en cada servidor |
 
 La estructura se actualiza sola al arrancar (`PRAGMA user_version`). Si existe el `data/state.json` de versiones anteriores, se importa una vez y se renombra a `state.json.migrado`.
 
 ## 🧪 Calidad del código
 
 ```powershell
-pip install -r requirements-dev.txt
+pip install --require-hashes -r requirements-dev.txt
 ruff check .          # linter
 ruff format --check . # formato
 mypy                  # tipos (modo estricto)
@@ -153,6 +154,24 @@ pytest                # tests
 ```
 
 Conviene correr los cuatro antes de cada push: Railway despliega lo que se sube a `main`.
+
+### Dependencias
+
+Las dependencias van fijadas con versión exacta y hash, para que un deploy nunca instale sola una versión nueva (o una comprometida):
+
+| Archivo | Qué es |
+|---|---|
+| `requirements.in` · `requirements-dev.in` | Lo que se pide, con rangos de versión. **Esto es lo que se edita a mano.** |
+| `requirements.txt` · `requirements-dev.txt` | Generados: versiones exactas y hashes para todas las plataformas. Railway instala `requirements.txt`. |
+
+Para agregar o actualizar una dependencia, editá el `.in` y regenerá:
+
+```powershell
+python -m uv pip compile requirements.in --universal --generate-hashes --python-version 3.12 -o requirements.txt
+python -m uv pip compile requirements-dev.in --universal --generate-hashes --python-version 3.12 -o requirements-dev.txt
+```
+
+Para traer las últimas versiones dentro de los rangos, agregá `--upgrade` a esos comandos. Después corré los cuatro chequeos de arriba antes de pushear.
 
 Los tests no usan la red ni Discord: Steam, DolarAPI y las interacciones se reemplazan por dobles de prueba (`tests/helpers.py` y `tests/fakes.py`), y la base de datos es una SQLite temporal por test.
 
@@ -172,6 +191,7 @@ La versión de Python se fija en [`.python-version`](.python-version).
 
 ```
 ├── bot.py                  # Punto de entrada (python bot.py)
+├── requirements.in         # Dependencias (se edita a mano) → requirements.txt (generado, con hashes)
 ├── vapora/
 │   ├── bot.py              # VaporaBot: crea los servicios y registra los cogs
 │   ├── config.py           # Settings: configuración leída del entorno
@@ -181,6 +201,10 @@ La versión de Python se fija en [`.python-version`](.python-version).
 │   ├── wishlist.py         # Reglas de los deseados: cuándo avisar una oferta
 │   ├── storage.py          # Base de datos SQLite
 │   ├── events.py           # Eventos internos entre cogs
+│   ├── previews.py         # Vistas previas animadas agrandadas (solo desde Steam)
+│   ├── ratelimit.py        # Límites de uso por usuario
+│   ├── permissions.py      # Qué puede hacer Vapora en cada canal
+│   ├── discord_errors.py   # Bloqueos de Discord (Cloudflare 1015): detección y logs
 │   ├── steam/              # Tienda de Steam
 │   │   ├── models.py       #   modelos (StoreItem, Price, Deal…)
 │   │   ├── links.py        #   detección de links en un mensaje
@@ -200,7 +224,8 @@ La versión de Python se fija en [`.python-version`](.python-version).
 │       ├── wishlist.py     #   /deseado y avisos de ofertas
 │       ├── wallpapers.py   #   /fondo y el fondo del día
 │       ├── settings.py     #   /config
-│       └── general.py      #   /ayuda
+│       ├── general.py      #   /ayuda
+│       └── health.py       #   latido para el monitor externo
 └── tests/                  # Tests con pytest
 ```
 
