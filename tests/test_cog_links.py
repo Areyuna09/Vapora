@@ -189,3 +189,14 @@ async def test_attachments_stay_within_discord_limits(bot: FakeBot, monkeypatch:
     reply = sent_kwargs(message.reply)
     assert [file.filename for file in reply["files"]] == ["fondo-3594441070.gif"]  # el segundo no entra
     assert reply["embeds"][1].image.url == "https://img/otro.gif"  # y usa la vista previa original
+
+
+async def test_link_spam_is_ignored_without_replying(bot: FakeBot):
+    cog = LinksCog(bot)  # type: ignore[arg-type]
+    messages = [make_message(LINK) for _ in range(7)]
+    for message in messages:
+        message.author.id = 5  # la misma persona
+    for message in messages:
+        await cog.on_message(message)
+    replied = [message.reply.await_count for message in messages]
+    assert replied == [1, 1, 1, 1, 1, 0, 0]  # cinco cada 30 s; el resto, sin respuesta

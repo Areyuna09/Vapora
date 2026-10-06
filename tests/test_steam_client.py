@@ -211,3 +211,12 @@ async def test_unexpected_reviews_are_skipped_like_a_failure():
     client, _ = _client({"api/appdetails": APP, "appreviews": ["x"], "curator": CURATOR})
     item = await client.get_item(ItemRef.app(367520))
     assert item is not None and item.reviews is None
+
+
+async def test_searches_are_cached_while_typing():
+    payload = {"items": [{"type": "app", "id": 1, "name": "Hollow Knight"}]}
+    client, session = _client({"storesearch": payload})
+    await client.search("Hollow")
+    await client.search("  hollow  ")  # mismo texto, otra forma
+    await client.search("hollow", limit=1)
+    assert session.count("storesearch") == 1

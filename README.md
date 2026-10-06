@@ -209,6 +209,13 @@ Las dependencias van en una sola dirección: los **cogs** usan la **UI** y los *
 
 El token **nunca** se sube al repositorio: vive solo en `.env`, que está en el `.gitignore`. Si se filtra, regeneralo en el Developer Portal con **Reset Token**.
 
+Además:
+
+- **Sin menciones masivas**: Vapora no menciona a nadie salvo a quien pidió un aviso de deseados. Un `@everyone` en el nombre de un juego o un fondo (que vienen de Steam) no notifica a nadie.
+- **Límites por usuario**: 8 comandos o botones cada 20 s, 5 mensajes con links cada 30 s y 3 `/fondo` por minuto. Quien se pasa recibe un solo aviso de "más despacio" (o ninguno, en los links), así el spam no se convierte en pedidos de Vapora a Discord.
+- **Descargas solo de Steam**: las vistas previas se bajan solo por HTTPS desde los servidores de imágenes de Steam, sin seguir redirecciones y con tope de tamaño.
+- **Consultas a la base parametrizadas** y `/config` reservado a quienes gestionan el servidor.
+
 ---
 
 <div align="center">

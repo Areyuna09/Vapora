@@ -177,7 +177,9 @@ async def test_notifies_in_the_wishlist_channel_mentioning_the_user(
     )
     sent = sent_kwargs(channel.send)
     assert sent["embed"].title == "🇦🇷 Ori and the Will of the Wisps"
-    assert sent["allowed_mentions"].users is True
+    mentions = sent["allowed_mentions"]
+    assert [user.id for user in mentions.users] == [USER]  # solo esa persona
+    assert not mentions.everyone and not mentions.roles
     assert (await db.wishlist(USER))[0].notified_final_cents == 299
 
 

@@ -20,6 +20,7 @@ from vapora.config import Settings
 from vapora.discord_errors import BAN_SUMMARY, is_cloudflare_ban
 from vapora.previews import PreviewEnlarger
 from vapora.pricing import DollarClient, PesoConverter
+from vapora.ratelimit import RateLimits, slow_down_text
 from vapora.sales import SalesCalendar, SteamSale, active_sale
 from vapora.steam import SteamClient, SteamError
 from vapora.steam.workshop import WorkshopClient
@@ -31,6 +32,21 @@ log = logging.getLogger(__name__)
 STATUS_TEXT = "Precios de Steam 🇦🇷"  # se ve debajo del nombre en la lista de miembros
 HTTP_TIMEOUT_SECONDS = 15
 COGS = (LinksCog, DealsCog, WishlistCog, WallpapersCog, SettingsCog, GeneralCog)
+
+
+class VaporaTree(app_commands.CommandTree["VaporaBot"]):
+    """Árbol de comandos que aplica el límite de uso por usuario a todos los comandos."""
+
+    async def interaction_check(self, interaction: discord.Interaction[VaporaBot]) -> bool:
+        limits = interaction.client.limits
+        is_autocomplete = interaction.type is discord.InteractionType.autocomplete
+        limit = limits.autocomplete if is_autocomplete else limits.commands
+        retry_after = limit.retry_after(interaction.user.id)
+        if not retry_after:
+            return True
+        if not is_autocomplete and limit.should_warn(interaction.user.id, retry_after):
+            await interaction.response.send_message(slow_down_text(retry_after), ephemeral=True)
+        return False
 
 
 class VaporaBot(commands.Bot):
@@ -50,9 +66,16 @@ class VaporaBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True  # para detectar los links de Steam en los mensajes
         super().__init__(
-            command_prefix="!", intents=intents, activity=discord.CustomActivity(name=STATUS_TEXT)
+            command_prefix="!",
+            intents=intents,
+            activity=discord.CustomActivity(name=STATUS_TEXT),
+            tree_cls=VaporaTree,
+            # Nada menciona a nadie salvo que se pida en ese mensaje: los nombres de juegos y
+            # fondos vienen de Steam y un "@everyone" ahí no debe notificar a todo el servidor.
+            allowed_mentions=discord.AllowedMentions.none(),
         )
         self.settings = settings
+        self.limits = RateLimits()
         self.db = Database(settings.database_file, settings.legacy_state_file)
         self._session: aiohttp.ClientSession | None = None
         self._commands_synced = False
@@ -123,7 +146,9 @@ class VaporaBot(commands.Bot):
             # Avisarle al usuario también fallaría, y sería un pedido más con la IP bloqueada.
             log.error("No pude responder /%s: %s", _command_name(interaction), BAN_SUMMARY)
             return
-        if isinstance(cause, SteamError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            text = slow_down_text(error.retry_after)
+        elif isinstance(cause, SteamError):
             log.warning("Steam no respondió durante /%s", _command_name(interaction), exc_info=cause)
             text = "😕 Steam no está respondiendo. Probá de nuevo en un rato."
         else:

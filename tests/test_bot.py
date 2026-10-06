@@ -126,3 +126,67 @@ async def test_command_error_from_a_cloudflare_ban_does_not_try_to_reply(bot: Va
     await bot.tree.on_error(interaction, app_commands.CommandInvokeError(MagicMock(), ban))
     interaction.response.send_message.assert_not_awaited()
     interaction.followup.send.assert_not_awaited()
+
+
+# ── Seguridad: menciones y límites de uso ─────────────────────────────────────
+
+
+async def test_nothing_mentions_anyone_by_default(bot: VaporaBot):
+    mentions = bot.allowed_mentions
+    assert mentions is not None
+    assert (mentions.everyone, mentions.users, mentions.roles, mentions.replied_user) == (
+        False,
+        False,
+        False,
+        False,
+    )
+
+
+def limited_interaction(user_id: int = 5, *, autocomplete: bool = False) -> MagicMock:
+    interaction = MagicMock()
+    interaction.user.id = user_id
+    interaction.type = (
+        discord.InteractionType.autocomplete if autocomplete else discord.InteractionType.application_command
+    )
+    interaction.created_at = (
+        discord.utils.utcnow()
+    )  # los cooldowns de discord.py usan la hora de la interacción
+    interaction.response.send_message = AsyncMock()
+    return interaction
+
+
+async def test_commands_over_the_limit_are_stopped_with_a_single_warning(bot: VaporaBot):
+    interaction = limited_interaction()
+    interaction.client = bot
+    allowed = [await bot.tree.interaction_check(interaction) for _ in range(10)]
+    assert allowed == [True] * 8 + [False, False]
+    interaction.response.send_message.assert_awaited_once()  # un aviso, no uno por intento
+    assert "Más despacio" in interaction.response.send_message.await_args.args[0]
+
+
+async def test_autocomplete_over_the_limit_is_ignored_silently(bot: VaporaBot):
+    interaction = limited_interaction(autocomplete=True)
+    interaction.client = bot
+    results = [await bot.tree.interaction_check(interaction) for _ in range(30)]
+    assert results.count(False) == 5
+    interaction.response.send_message.assert_not_awaited()
+
+
+async def test_command_cooldown_error_asks_to_wait(bot: VaporaBot):
+    interaction = failing_interaction(already_answered=False)
+    error = app_commands.CommandOnCooldown(app_commands.Cooldown(3, 60), 42.5)
+    await bot.tree.on_error(interaction, error)
+    interaction.response.send_message.assert_awaited_once_with(
+        "⏳ Más despacio: probá de nuevo en 43 s.", ephemeral=True
+    )
+
+
+async def test_wallpaper_command_has_its_own_stricter_limit(bot: VaporaBot):
+    command = bot.tree.get_command("fondo")
+    assert command is not None
+    (cooldown_check,) = command.checks
+    interaction = limited_interaction()
+    for _ in range(3):  # tres por minuto
+        assert await discord.utils.maybe_coroutine(cooldown_check, interaction)
+    with pytest.raises(app_commands.CommandOnCooldown):
+        await discord.utils.maybe_coroutine(cooldown_check, interaction)

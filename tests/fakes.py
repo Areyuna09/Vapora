@@ -12,6 +12,7 @@ import discord
 
 from vapora.config import Settings
 from vapora.pricing import ExchangeRates, PesoConverter
+from vapora.ratelimit import RateLimits
 from vapora.sales import AUTUMN_COLOR, SteamSale
 from vapora.steam import Deal, ItemKind, ItemRef, Price, SearchResult, SteamError, StoreItem
 from vapora.steam.workshop import CATEGORIES, Wallpaper
@@ -111,6 +112,7 @@ class FakeBot:
         self.steam = steam or FakeSteam()
         self.workshop = FakeWorkshop()
         self.previews = FakePreviews()
+        self.limits = RateLimits()
         self.calendar = FakeCalendar()
         self.settings = Settings(discord_token="test")
         self.rates = ExchangeRates(official=1550.0, crypto=1623.44)

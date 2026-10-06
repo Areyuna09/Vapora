@@ -84,3 +84,53 @@ async def test_huge_downloads_are_skipped(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(previews_module, "MAX_INPUT_BYTES", 10)
     enlarger = PreviewEnlarger(FakeSession({"steamusercontent": make_gif()}))  # type: ignore[arg-type]
     assert await enlarger.enlarged(URL) is None
+
+
+# ── Seguridad de las descargas ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        ("https://images.steamusercontent.com/ugc/1/preview/", True),
+        ("https://steamuserimages-a.akamaihd.net/ugc/1/", True),
+        ("https://shared.akamai.steamstatic.com/x.gif", True),
+        ("http://images.steamusercontent.com/ugc/1/", False),  # sin HTTPS
+        ("https://evil.com/steamusercontent.com/x.gif", False),
+        ("https://steamusercontent.com.evil.com/x.gif", False),
+        ("https://localhost/x.gif", False),
+        ("https://169.254.169.254/latest/meta-data", False),
+        ("file:///etc/passwd", False),
+    ],
+)
+def test_only_steam_images_are_downloaded(url: str, allowed: bool):
+    from vapora.previews import is_steam_image_url
+
+    assert is_steam_image_url(url) is allowed
+
+
+async def test_urls_outside_steam_are_never_requested():
+    session = FakeSession({"evil": make_gif()})
+    enlarger = PreviewEnlarger(session)  # type: ignore[arg-type]
+    assert await enlarger.enlarged("https://evil.com/preview.gif") is None
+    assert session.calls == []
+
+
+async def test_redirects_are_not_followed():
+    class RedirectingSession(FakeSession):
+        def get(self, url, params=None, **kwargs):
+            self.kwargs = kwargs
+            return super().get(url, params)
+
+    session = RedirectingSession({"steamusercontent": make_gif()})
+    await PreviewEnlarger(session).enlarged(URL)  # type: ignore[arg-type]
+    assert session.kwargs == {"allow_redirects": False}
+
+
+async def test_unexpected_errors_never_break_the_command(monkeypatch: pytest.MonkeyPatch):
+    def broken(data: bytes) -> bytes:
+        raise RuntimeError("bug inesperado")
+
+    monkeypatch.setattr(previews_module, "enlarge_gif", broken)
+    enlarger = PreviewEnlarger(FakeSession({"steamusercontent": make_gif()}))  # type: ignore[arg-type]
+    assert await enlarger.enlarged(URL) is None

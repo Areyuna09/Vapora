@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+from urllib.parse import urlsplit
 
 import aiohttp
 from PIL import Image, ImageSequence, UnidentifiedImageError
@@ -26,6 +27,8 @@ MAX_OUTPUT_BYTES = 8 * 1024 * 1024  # Discord acepta adjuntos de hasta 10 MB
 CACHE_TTL_SECONDS = 6 * 60 * 60
 CACHE_ENTRIES = 30  # cada uno pesa unos pocos MB
 DEFAULT_FRAME_MS = 100
+# Servidores de donde Steam sirve las vistas previas del Workshop (y sus subdominios).
+STEAM_IMAGE_HOSTS = ("steamusercontent.com", "steamuserimages-a.akamaihd.net", "steamstatic.com")
 
 
 def enlarge_gif(data: bytes) -> bytes | None:
@@ -38,6 +41,8 @@ def enlarge_gif(data: bytes) -> bytes | None:
         return None
     try:
         with Image.open(io.BytesIO(data)) as gif:
+            if min(gif.size) < 1:  # defensa: Pillow hoy usa el tamaño del cuadro si la cabecera dice 0
+                return None
             scale = TARGET_SIDE / max(gif.size)
             if scale < MIN_SCALE or getattr(gif, "n_frames", 1) > MAX_FRAMES:
                 return None
@@ -58,7 +63,7 @@ def enlarge_gif(data: bytes) -> bytes | None:
                 loop=gif.info.get("loop", 0),
                 disposal=2,  # cada cuadro reemplaza al anterior, como en el original
             )
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
         log.warning("No pude agrandar una vista previa", exc_info=True)
         return None
     enlarged = out.getvalue()
@@ -77,19 +82,52 @@ class PreviewEnlarger:
 
         Nunca lanza: si algo falla, la tarjeta usa la vista previa original.
         """
-        if not preview_url:
+        if not preview_url or not is_steam_image_url(preview_url):
             return None
-        return await self._cache.get_or_fetch(preview_url, lambda: self._enlarge(preview_url))
+        try:
+            return await self._cache.get_or_fetch(preview_url, lambda: self._enlarge(preview_url))
+        except Exception:
+            # Agrandar es un extra: un error inesperado no puede dejar a /fondo sin responder.
+            log.exception("Falló el agrandado de la vista previa %s", preview_url)
+            return None
 
     async def _enlarge(self, preview_url: str) -> bytes | None:
-        try:
-            async with self._session.get(preview_url) as response:
-                response.raise_for_status()
-                if (response.content_length or 0) > MAX_INPUT_BYTES:
-                    return None
-                data = await response.read()
-        except (aiohttp.ClientError, TimeoutError):
-            log.warning("No pude descargar la vista previa %s", preview_url, exc_info=True)
+        data = await self._download(preview_url)
+        if data is None:
             return None
         # Procesar las imágenes usa CPU: en un hilo aparte, para no frenar al bot.
         return await asyncio.to_thread(enlarge_gif, data)
+
+    async def _download(self, url: str) -> bytes | None:
+        """Descarga hasta `MAX_INPUT_BYTES`; si el archivo es más grande, lo descarta.
+
+        No sigue redirecciones: así la descarga no puede terminar fuera de Steam.
+        """
+        try:
+            async with self._session.get(url, allow_redirects=False) as response:
+                response.raise_for_status()
+                if response.status != 200 or (response.content_length or 0) > MAX_INPUT_BYTES:
+                    return None
+                chunks, total = [], 0
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    total += len(chunk)
+                    if total > MAX_INPUT_BYTES:  # el servidor no avisó el tamaño, o mintió
+                        return None
+                    chunks.append(chunk)
+        except (aiohttp.ClientError, TimeoutError):
+            log.warning("No pude descargar la vista previa %s", url, exc_info=True)
+            return None
+        return b"".join(chunks)
+
+
+def is_steam_image_url(url: str) -> bool:
+    """Si la URL es HTTPS y de un servidor de imágenes de Steam.
+
+    La URL viene en la respuesta de Steam, pero igual se verifica: Vapora solo descarga
+    imágenes de Steam, nunca de una dirección cualquiera.
+    """
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and any(
+        host == allowed or host.endswith("." + allowed) for allowed in STEAM_IMAGE_HOSTS
+    )

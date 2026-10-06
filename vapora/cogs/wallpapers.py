@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 RECENT_PER_CHANNEL = 15  # fondos recientes que no se repiten en un mismo canal
+WALLPAPERS_PER_MINUTE = 3  # por usuario
 
 CATEGORY_CHOICES = [app_commands.Choice(name=label, value=key) for key, (label, _) in CATEGORIES.items()]
 
@@ -53,6 +54,8 @@ class WallpapersCog(commands.Cog):
     )
     @app_commands.describe(categoria="De qué tipo (si no elegís, de cualquiera)")
     @app_commands.choices(categoria=CATEGORY_CHOICES)
+    # Más estricto que el límite general: cada uso puede subir unos MB de vista previa.
+    @app_commands.checks.cooldown(WALLPAPERS_PER_MINUTE, 60, key=lambda interaction: interaction.user.id)
     async def wallpaper(
         self, interaction: discord.Interaction, categoria: app_commands.Choice[str] | None = None
     ) -> None:

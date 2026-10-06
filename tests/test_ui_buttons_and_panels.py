@@ -105,3 +105,22 @@ def test_wishlist_embed_marks_games_on_sale():
         "• [Hollow Knight](https://store.steampowered.com/app/367520/)\n"
         "• [Ori](https://store.steampowered.com/app/1057090/) 🔥"
     )
+
+
+async def test_wish_button_respects_the_usage_limit():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from vapora.ratelimit import RateLimits
+
+    client = SimpleNamespace(limits=RateLimits(), dispatch=MagicMock())
+    interaction = MagicMock(client=client)
+    interaction.user.id = 5
+    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock()
+    button = WishButton(367520)
+    for _ in range(10):
+        await button.callback(interaction)
+    assert interaction.response.defer.await_count == 8
+    assert client.dispatch.call_count == 8
+    interaction.response.send_message.assert_awaited_once()  # un solo "más despacio"

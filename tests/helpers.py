@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,21 @@ class FakeResponse:
     def content_length(self) -> int | None:
         return len(self._payload) if isinstance(self._payload, bytes) else None
 
+    @property
+    def content(self) -> FakeStream:
+        return FakeStream(self._payload if isinstance(self._payload, bytes) else b"")
+
+
+class FakeStream:
+    """Lo que usa Vapora de `response.content` en aiohttp: leer de a pedazos."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    async def iter_chunked(self, size: int) -> AsyncIterator[bytes]:
+        for start in range(0, len(self._data), size):
+            yield self._data[start : start + size]
+
 
 def make_gif(size: tuple[int, int] = (160, 160), frames: int = 3, duration: int = 80) -> bytes:
     """GIF animado de prueba: cada cuadro de un color distinto."""
@@ -62,7 +78,7 @@ class FakeSession:
         self.routes = routes or {}
         self.calls: list[tuple[str, Any]] = []
 
-    def get(self, url: str, params: Any = None) -> FakeResponse:
+    def get(self, url: str, params: Any = None, **_: object) -> FakeResponse:
         """`params` puede ser un dict o una lista de pares (para parámetros repetidos)."""
         return self._respond(url, params or {})
 

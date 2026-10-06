@@ -35,6 +35,10 @@ class LinksCog(commands.Cog):
         workshop_ids = extract_workshop_ids(message.content)[: MAX_CARDS_PER_MESSAGE - len(refs)]
         if not refs and not workshop_ids:
             return
+        if self.bot.limits.links.retry_after(message.author.id):
+            # Sin aviso: responder a cada mensaje de spam sería, justamente, spamear a Discord.
+            log.info("Links de %s ignorados: pasó el límite de mensajes con links", message.author.id)
+            return
         items = await self._fetch_items(refs)
         wallpapers = await self._fetch_wallpapers(workshop_ids)
         if not items and not wallpapers:

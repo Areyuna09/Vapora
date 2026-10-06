@@ -249,7 +249,10 @@ class WishlistCog(commands.Cog):
                 await channel.send(
                     f"<@{wish.user_id}> {text}",
                     embed=card,
-                    allowed_mentions=discord.AllowedMentions(users=True),
+                    # Solo se menciona a quien pidió el aviso (el resto del texto viene de Steam).
+                    allowed_mentions=discord.AllowedMentions(
+                        everyone=False, roles=False, users=[discord.Object(wish.user_id)]
+                    ),
                 )
                 return True
             except discord.HTTPException:

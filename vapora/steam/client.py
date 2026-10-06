@@ -27,6 +27,7 @@ ARGENTINE_CURATOR_URL = f"{STORE_URL}/curator/45013169/ajaxgetfilteredrecommenda
 T = TypeVar("T")
 
 ITEM_TTL_SECONDS = 60 * 60
+SEARCH_TTL_SECONDS = 10 * 60  # el autocompletado repite las mismas búsquedas mientras se escribe
 PRICES_PER_REQUEST = 100  # appdetails acepta varios juegos juntos si se pide solo el precio
 ARGENTINE_LIST_TTL_SECONDS = 24 * 60 * 60
 
@@ -45,6 +46,7 @@ class SteamClient:
         self._country = country
         self._language = language
         self._items: TTLCache[ItemRef, StoreItem | None] = TTLCache(ITEM_TTL_SECONDS)
+        self._searches: TTLCache[str, tuple[SearchResult, ...]] = TTLCache(SEARCH_TTL_SECONDS)
         self._argentine_ids: RefreshingValue[frozenset[int]] = RefreshingValue(
             ARGENTINE_LIST_TTL_SECONDS, frozenset()
         )
@@ -87,9 +89,14 @@ class SteamClient:
         return prices
 
     async def search(self, term: str, *, limit: int = 10) -> list[SearchResult]:
-        """Juegos que coinciden con el texto, como el buscador de la tienda."""
+        """Juegos que coinciden con el texto, como el buscador de la tienda (con caché)."""
+        key = " ".join(term.casefold().split())
+        results = await self._searches.get_or_fetch(key, lambda: self._fetch_search(term))
+        return list(results[:limit])
+
+    async def _fetch_search(self, term: str) -> tuple[SearchResult, ...]:
         payload = await self._get_json(SEARCH_URL, {"term": term, **self._region})
-        return parsers.parse_search_results(_expect(dict, payload, SEARCH_URL))[:limit]
+        return tuple(parsers.parse_search_results(_expect(dict, payload, SEARCH_URL)))
 
     async def featured_deals(self) -> list[Deal]:
         """Ofertas destacadas de la portada."""

@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, cast
 
 import discord
 
 from vapora import events
+from vapora.ratelimit import slow_down_text
 from vapora.steam import StoreItem
+
+if TYPE_CHECKING:
+    from vapora.bot import VaporaBot
 
 MAX_BUTTON_ROWS = 5  # límite de Discord
 MAX_LABEL_LENGTH = 80  # límite de Discord
@@ -41,6 +46,13 @@ class WishButton(
         return cls(int(match["app_id"]))
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Los botones no pasan por el árbol de comandos: el límite de uso se aplica acá.
+        limit = cast("VaporaBot", interaction.client).limits.commands
+        retry_after = limit.retry_after(interaction.user.id)
+        if retry_after:
+            if limit.should_warn(interaction.user.id, retry_after):
+                await interaction.response.send_message(slow_down_text(retry_after), ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True, thinking=True)
         interaction.client.dispatch(events.WISH_BUTTON, interaction, self.app_id)
 
