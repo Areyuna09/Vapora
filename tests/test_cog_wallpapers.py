@@ -159,3 +159,28 @@ async def test_daily_wallpaper_attaches_a_fresh_file_per_channel(
     await WallpapersCog(bot).post_daily_wallpaper()  # type: ignore[arg-type]
     first_file, second_file = sent_kwargs(first.send)["files"][0], sent_kwargs(second.send)["files"][0]
     assert first_file is not second_file  # un discord.File se puede mandar una sola vez
+
+
+async def test_wallpaper_command_without_attach_permission_uses_the_original(
+    cog: WallpapersCog, bot: FakeBot
+):
+    bot.workshop = FakeWorkshop(ANIME)
+    bot.previews.enlarged_by_url[ANIME.preview_url or ""] = b"GIF89a-agrandado"
+    interaction = make_interaction()
+    interaction.app_permissions.attach_files = False
+    await cog.wallpaper.callback(cog, interaction)
+    sent = sent_kwargs(interaction.followup.send)
+    assert sent["files"] == []
+    assert sent["embed"].image.url == ANIME.preview_url
+
+
+async def test_daily_wallpaper_without_attach_permission_uses_the_original(
+    bot: FakeBot, db: Database, at_wallpaper_time: datetime
+):
+    bot.workshop = FakeWorkshop(ANIME)
+    bot.previews.enlarged_by_url[ANIME.preview_url or ""] = b"GIF89a-agrandado"
+    await db.set_channel(GUILD, Feature.WALLPAPERS, CHANNEL)
+    channel = bot.add_channel(CHANNEL)
+    channel.permissions_for.return_value.attach_files = False
+    await WallpapersCog(bot).post_daily_wallpaper()  # type: ignore[arg-type]
+    assert sent_kwargs(channel.send)["files"] == []

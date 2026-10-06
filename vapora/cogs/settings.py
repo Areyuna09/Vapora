@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from vapora import events
+from vapora.permissions import missing_send_permissions
 from vapora.storage import Feature
 from vapora.ui.panels import FEATURE_LABELS, build_config_embed
 
@@ -21,17 +22,6 @@ FEATURE_CHOICES = [
     app_commands.Choice(name="🔔 Avisos de deseados en oferta", value=Feature.WISHLIST.value),
     app_commands.Choice(name="🖼️ Fondo del día de Wallpaper Engine", value=Feature.WALLPAPERS.value),
 ]
-
-
-def missing_permissions(channel: discord.abc.GuildChannel, member: discord.Member) -> list[str]:
-    """Permisos que le faltan a `member` para publicar tarjetas en el canal."""
-    permissions = channel.permissions_for(member)
-    required = {
-        "Ver canal": permissions.view_channel,
-        "Enviar mensajes": permissions.send_messages,
-        "Insertar enlaces": permissions.embed_links,
-    }
-    return [name for name, granted in required.items() if not granted]
 
 
 class SettingsCog(commands.Cog):
@@ -53,7 +43,7 @@ class SettingsCog(commands.Cog):
     ) -> None:
         guild = interaction.guild
         assert guild is not None  # el grupo es guild_only
-        missing = missing_permissions(canal, guild.me)
+        missing = missing_send_permissions(canal)
         if missing:
             await interaction.response.send_message(
                 f"⚠️ No puedo publicar en {canal.mention}. "

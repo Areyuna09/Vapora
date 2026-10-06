@@ -14,6 +14,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from vapora.cogs._tasks import argentina_today, missed_daily_post, pending_daily_targets, survives_errors
+from vapora.permissions import missing_send_permissions
 from vapora.sales import ARGENTINA
 from vapora.steam import SteamError
 from vapora.steam.workshop import CATEGORIES, Wallpaper
@@ -65,7 +66,10 @@ class WallpapersCog(commands.Cog):
         if chosen is None:
             await interaction.followup.send("🤔 No encontré fondos ahora. Probá de nuevo en un rato.")
             return
-        embed, files = build_wallpaper_message(chosen, await self.bot.previews.enlarged(chosen.preview_url))
+        # app_permissions: lo que Vapora puede hacer en el canal del comando.
+        can_attach = interaction.app_permissions.attach_files
+        enlarged = await self.bot.previews.enlarged(chosen.preview_url) if can_attach else None
+        embed, files = build_wallpaper_message(chosen, enlarged)
         await interaction.followup.send(embed=embed, files=files, view=build_wallpaper_buttons([chosen]))
 
     # ── Fondo del día ─────────────────────────────────────────────────────────
@@ -88,7 +92,8 @@ class WallpapersCog(commands.Cog):
             if chosen is None:
                 log.warning("No hay fondos para publicar hoy")
                 return
-            enlarged = await self.bot.previews.enlarged(chosen.preview_url)
+            can_attach = not missing_send_permissions(channel, files=True)
+            enlarged = await self.bot.previews.enlarged(chosen.preview_url) if can_attach else None
             embed, files = build_wallpaper_message(chosen, enlarged, title_prefix="🖼️ Fondo del día ·")
             try:
                 await channel.send(embed=embed, files=files, view=build_wallpaper_buttons([chosen]))

@@ -85,6 +85,8 @@ async def test_database_is_ready_after_setup(bot: VaporaBot, tmp_path: Path):
 
 async def test_find_channel(bot: VaporaBot, monkeypatch: pytest.MonkeyPatch):
     channel = MagicMock(spec=discord.TextChannel)
+    channel.guild = MagicMock()
+    channel.permissions_for.return_value = MagicMock(view_channel=True, send_messages=True, embed_links=True)
     monkeypatch.setattr(bot, "get_channel", lambda channel_id: channel if channel_id == 100 else None)
     assert bot.find_channel(100) is channel
     assert bot.find_channel(999) is None  # canal borrado o que Vapora no ve
@@ -190,3 +192,19 @@ async def test_wallpaper_command_has_its_own_stricter_limit(bot: VaporaBot):
         assert await discord.utils.maybe_coroutine(cooldown_check, interaction)
     with pytest.raises(app_commands.CommandOnCooldown):
         await discord.utils.maybe_coroutine(cooldown_check, interaction)
+
+
+async def test_find_channel_skips_channels_where_vapora_cannot_post(
+    bot: VaporaBot, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.guild = MagicMock()
+    channel.permissions_for.return_value = MagicMock(view_channel=True, send_messages=False, embed_links=True)
+    monkeypatch.setattr(bot, "get_channel", lambda channel_id: channel)
+    assert bot.find_channel(100) is None  # publicar igual sería un pedido rechazado
+    assert bot.find_channel(100) is None
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    assert warnings == ["No puedo publicar en el canal 100: me faltan permisos (Enviar mensajes)"]  # una vez
+
+    channel.permissions_for.return_value.send_messages = True  # le devolvieron el permiso
+    assert bot.find_channel(100) is channel

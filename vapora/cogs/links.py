@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands
 
+from vapora.permissions import can_hide_previews, missing_send_permissions
 from vapora.steam import ItemRef, SteamError, StoreItem, extract_item_refs
 from vapora.steam.workshop import Wallpaper, extract_workshop_ids
 from vapora.ui.buttons import build_card_buttons
@@ -35,6 +36,10 @@ class LinksCog(commands.Cog):
         workshop_ids = extract_workshop_ids(message.content)[: MAX_CARDS_PER_MESSAGE - len(refs)]
         if not refs and not workshop_ids:
             return
+        if missing_send_permissions(message.channel, reply=True):
+            # Responder igual sería un pedido que Discord rechaza (y cuenta para su límite).
+            log.debug("Sin permisos para responder links en #%s", message.channel)
+            return
         if self.bot.limits.links.retry_after(message.author.id):
             # Sin aviso: responder a cada mensaje de spam sería, justamente, spamear a Discord.
             log.info("Links de %s ignorados: pasó el límite de mensajes con links", message.author.id)
@@ -49,7 +54,8 @@ class LinksCog(commands.Cog):
             converter = await self.bot.peso_converter()
             sale = await self.bot.current_sale()
             embeds = [build_game_card(item, converter, sale) for item in items]
-        wallpaper_embeds, files = await self._wallpaper_cards(wallpapers)
+        can_attach = not missing_send_permissions(message.channel, files=True)
+        wallpaper_embeds, files = await self._wallpaper_cards(wallpapers, can_attach=can_attach)
         view = build_card_buttons(items)
         add_wallpaper_buttons(view, wallpapers, first_row=len(items))
         try:
@@ -93,16 +99,16 @@ class LinksCog(commands.Cog):
         return wallpapers
 
     async def _wallpaper_cards(
-        self, wallpapers: list[Wallpaper]
+        self, wallpapers: list[Wallpaper], *, can_attach: bool
     ) -> tuple[list[discord.Embed], list[discord.File]]:
         """Tarjetas de los fondos, con la vista previa agrandada adjunta mientras entre.
 
         Los adjuntos de un mensaje no pueden pasar el límite de Discord: los que no entran
-        usan la vista previa original.
+        (o todos, si Vapora no puede adjuntar archivos en el canal) usan la vista previa original.
         """
         embeds, files, attached_bytes = [], [], 0
         for wallpaper in wallpapers:
-            enlarged = await self.bot.previews.enlarged(wallpaper.preview_url)
+            enlarged = await self.bot.previews.enlarged(wallpaper.preview_url) if can_attach else None
             if enlarged is not None and attached_bytes + len(enlarged) > MAX_ATTACHED_BYTES:
                 enlarged = None
             embed, wallpaper_files = build_wallpaper_message(wallpaper, enlarged)
@@ -112,13 +118,14 @@ class LinksCog(commands.Cog):
         return embeds, files
 
     async def _hide_link_preview(self, message: discord.Message) -> None:
-        """Oculta el preview que Discord arma para el link, así queda solo la tarjeta de Vapora."""
+        """Oculta el preview que Discord arma para el link, así queda solo la tarjeta de Vapora.
+
+        Sin el permiso "Gestionar mensajes" (o en un MD, donde nunca se puede) ni se intenta:
+        antes eso era un pedido rechazado por cada link pegado.
+        """
+        if not can_hide_previews(message.channel):
+            return
         try:
             await message.edit(suppress=True)
-        except discord.Forbidden:
-            log.warning(
-                "Sin permiso 'Gestionar mensajes' en #%s: no se puede ocultar el preview original.",
-                message.channel,
-            )
         except discord.HTTPException:
             log.exception("No se pudo ocultar el preview del mensaje %s", message.id)

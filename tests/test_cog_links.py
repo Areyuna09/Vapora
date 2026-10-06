@@ -200,3 +200,56 @@ async def test_link_spam_is_ignored_without_replying(bot: FakeBot):
         await cog.on_message(message)
     replied = [message.reply.await_count for message in messages]
     assert replied == [1, 1, 1, 1, 1, 0, 0]  # cinco cada 30 s; el resto, sin respuesta
+
+
+# ── Sin pedidos que Discord va a rechazar ─────────────────────────────────────
+
+
+def _restrict(message: MagicMock, **permissions: bool) -> None:
+    granted = {
+        "view_channel": True,
+        "send_messages": True,
+        "embed_links": True,
+        "attach_files": True,
+        "read_message_history": True,
+        "manage_messages": True,
+        **permissions,
+    }
+    message.channel.permissions_for.return_value = MagicMock(**granted)
+
+
+@pytest.mark.parametrize("missing", ["send_messages", "embed_links", "read_message_history"])
+async def test_no_reply_where_vapora_cannot_answer(bot: FakeBot, missing: str):
+    message = make_message(LINK)
+    _restrict(message, **{missing: False})
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    message.reply.assert_not_awaited()
+    assert bot.steam.item_requests == []  # ni siquiera consulta a Steam
+
+
+async def test_preview_is_not_hidden_without_manage_messages(bot: FakeBot):
+    message = make_message(LINK)
+    _restrict(message, manage_messages=False)
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    message.reply.assert_awaited_once()
+    message.edit.assert_not_awaited()  # antes era un 403 por cada link
+
+
+async def test_preview_is_not_hidden_in_direct_messages(bot: FakeBot):
+    message = make_message(LINK)
+    message.channel = MagicMock(spec=discord.DMChannel)
+    message.channel.guild = None
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    message.reply.assert_awaited_once()
+    message.edit.assert_not_awaited()
+
+
+async def test_wallpapers_use_the_original_preview_without_attach_permission(bot: FakeBot):
+    bot.workshop = FakeWorkshop(WALLPAPER)
+    bot.previews.enlarged_by_url["https://img/nikke.gif"] = b"GIF89a-agrandado"
+    message = make_message(WORKSHOP_LINK)
+    _restrict(message, attach_files=False)
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    assert reply["files"] == []
+    assert reply["embeds"][0].image.url == "https://img/nikke.gif"

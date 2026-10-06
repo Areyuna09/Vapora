@@ -18,6 +18,7 @@ from vapora.cogs.wallpapers import WallpapersCog
 from vapora.cogs.wishlist import WishlistCog
 from vapora.config import Settings
 from vapora.discord_errors import BAN_SUMMARY, is_cloudflare_ban
+from vapora.permissions import missing_send_permissions
 from vapora.previews import PreviewEnlarger
 from vapora.pricing import DollarClient, PesoConverter
 from vapora.ratelimit import RateLimits, slow_down_text
@@ -76,6 +77,7 @@ class VaporaBot(commands.Bot):
         )
         self.settings = settings
         self.limits = RateLimits()
+        self._warned_channels: set[int] = set()  # canales con problemas ya avisados en el log
         self.db = Database(settings.database_file, settings.legacy_state_file)
         self._session: aiohttp.ClientSession | None = None
         self._commands_synced = False
@@ -108,14 +110,30 @@ class VaporaBot(commands.Bot):
         return active_sale(datetime.now(UTC), await self.calendar.sales())
 
     def find_channel(self, channel_id: int | None) -> discord.abc.Messageable | None:
-        """Canal donde publicar, o `None` si no está configurado o Vapora ya no lo ve."""
+        """Canal donde publicar, o `None` si no está configurado, Vapora ya no lo ve o no puede
+        publicar ahí (mandar igual sería un pedido que Discord rechaza y cuenta para su límite).
+
+        Los problemas se avisan en el log una sola vez por canal, hasta que se arreglan.
+        """
         if not channel_id:
             return None
         channel = self.get_channel(channel_id)
         if not isinstance(channel, discord.abc.Messageable):
-            log.warning("No encuentro el canal %s (¿lo borraron o Vapora no lo ve?)", channel_id)
+            self._warn_channel_once(channel_id, "No encuentro el canal %s (¿lo borraron o Vapora no lo ve?)")
             return None
+        missing = missing_send_permissions(channel)
+        if missing:
+            self._warn_channel_once(
+                channel_id, f"No puedo publicar en el canal %s: me faltan permisos ({', '.join(missing)})"
+            )
+            return None
+        self._warned_channels.discard(channel_id)
         return channel
+
+    def _warn_channel_once(self, channel_id: int, message: str) -> None:
+        if channel_id not in self._warned_channels:
+            self._warned_channels.add(channel_id)
+            log.warning(message, channel_id)
 
     # ── Eventos ───────────────────────────────────────────────────────────────
 

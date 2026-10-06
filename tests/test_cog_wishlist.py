@@ -214,8 +214,25 @@ async def test_falls_back_to_dm_when_channel_rejects_the_message(
     user.send.assert_awaited_once()
 
 
-async def test_failed_notification_is_retried_next_time(cog: WishlistCog, bot: FakeBot, db: Database):
-    bot.add_user(USER, dms_open=False)
+async def test_closed_dms_are_not_retried_every_hour(cog: WishlistCog, bot: FakeBot, db: Database):
+    """Reintentar sería un pedido rechazado por hora y por juego, para siempre."""
+    user = bot.add_user(USER, dms_open=False)
+    await db.add_wish(USER, 1057090, ORI.name, GUILD)
+    await cog.check_prices()
+    await cog.check_prices()
+    assert user.send.await_count == 1  # se intentó una vez
+    assert (await db.wishlist(USER))[0].notified_final_cents == 299  # y la oferta queda avisada
+
+
+async def test_deleted_account_is_not_retried(cog: WishlistCog, db: Database):
+    await db.add_wish(USER, 1057090, ORI.name, GUILD)  # no está en caché y fetch_user da 404
+    await cog.check_prices()
+    assert (await db.wishlist(USER))[0].notified_final_cents == 299
+
+
+async def test_temporary_discord_failure_is_retried_next_time(cog: WishlistCog, bot: FakeBot, db: Database):
+    user = bot.add_user(USER)
+    user.send.side_effect = discord.HTTPException(type("R", (), {"status": 503, "reason": "x"})(), "caído")
     await db.add_wish(USER, 1057090, ORI.name, GUILD)
     await cog.check_prices()
     assert (await db.wishlist(USER))[0].notified_final_cents is None  # sin marcar: se reintenta

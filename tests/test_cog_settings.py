@@ -4,7 +4,7 @@ import pytest
 from fakes import FakeBot, make_interaction, sent_kwargs, sent_text
 
 from vapora import events
-from vapora.cogs.settings import SettingsCog, missing_permissions
+from vapora.cogs.settings import SettingsCog
 from vapora.storage import Database, Feature
 
 GUILD, CHANNEL = 10, 100
@@ -68,11 +68,6 @@ async def test_config_rejects_channel_where_vapora_cannot_post(bot: FakeBot, db:
         "⚠️ No puedo publicar en <#100>. Me faltan estos permisos ahí: **Enviar mensajes, Insertar enlaces**."
     )
     assert await db.channels(GUILD) == {}
-
-
-def test_missing_permissions_lists_only_what_is_missing():
-    assert missing_permissions(text_channel(), MagicMock()) == []
-    assert missing_permissions(text_channel(view_channel=False), MagicMock()) == ["Ver canal"]
 
 
 async def test_config_disable(bot: FakeBot, db: Database):

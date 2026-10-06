@@ -215,7 +215,7 @@ class WishlistCog(commands.Cog):
             if wish.app_id not in cards:
                 cards[wish.app_id] = await self._fetch_card_item(wish.app_id, price)
             item = cards[wish.app_id]
-            # Si no se pudo avisar no se marca, así se reintenta en la próxima revisión.
+            # Si falló algo pasajero no se marca, así se reintenta en la próxima revisión.
             if item is not None and await self._notify(wish, item, converter, sale):
                 await self.bot.db.set_wish_notified(wish.user_id, wish.app_id, price.final_cents)
                 log.info("Aviso de deseado: %s a %s", item.name, wish.user_id)
@@ -238,7 +238,12 @@ class WishlistCog(commands.Cog):
     async def _notify(
         self, wish: Wish, item: StoreItem, converter: PesoConverter, sale: SteamSale | None
     ) -> bool:
-        """Avisa en el canal de deseados del servidor, mencionando a la persona; si no hay, por MD."""
+        """Avisa en el canal de deseados del servidor, mencionando a la persona; si no hay, por MD.
+
+        Devuelve si la oferta queda avisada: `True` si se avisó, o si reintentar no serviría
+        (MD cerrados o cuenta inexistente: reintentar cada hora solo sumaría pedidos que
+        Discord rechaza). `False` si falló algo pasajero y conviene reintentar.
+        """
         discount = item.price.discount_percent if item.price else 0
         text = f"🔔 ¡**{item.name}**, de tu lista de deseados, está en oferta! (-{discount}%)"
         card = build_game_card(item, converter, sale)
@@ -261,9 +266,19 @@ class WishlistCog(commands.Cog):
             user = self.bot.get_user(wish.user_id) or await self.bot.fetch_user(wish.user_id)
             await user.send(text, embed=card)
             return True
+        except (discord.Forbidden, discord.NotFound):
+            log.info(
+                "No pude avisarle a %s de la oferta de %s (MD cerrados o cuenta inexistente): "
+                "no se reintenta esta oferta",
+                wish.user_id,
+                item.name,
+            )
+            return True
         except discord.HTTPException:
             log.warning(
-                "No pude avisarle a %s de la oferta de %s (sin canal y MD cerrados)", wish.user_id, item.name
+                "No pude avisarle a %s de la oferta de %s; reintento en la próxima revisión",
+                wish.user_id,
+                item.name,
             )
             return False
 

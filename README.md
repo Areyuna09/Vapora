@@ -205,6 +205,13 @@ La versión de Python se fija en [`.python-version`](.python-version).
 
 Las dependencias van en una sola dirección: los **cogs** usan la **UI** y los **servicios** (`steam`, `pricing`, `sales`, `storage`), y estos no saben nada de Discord. Por eso la lógica se puede probar sin conectarse.
 
+## 🛡️ En producción
+
+Discord bloquea toda una IP (error 1015 de Cloudflare) si recibe más de 10.000 pedidos rechazados en 10 minutos, y en Railway la IP de salida es compartida con otros proyectos. Vapora está preparada para eso:
+
+- **Si la IP ya está bloqueada al arrancar**, espera 15, 30 y después 60 minutos entre intentos sin cerrarse, así no entra en un bucle de reinicios que alargaría el bloqueo. Esos errores quedan en una línea en el log.
+- **No manda pedidos que Discord va a rechazar**: revisa los permisos antes de responder un link, ocultar su preview, publicar en un canal configurado o adjuntar una vista previa, y no reintenta avisos por MD a quien los tiene cerrados.
+
 ## 🔒 Seguridad
 
 El token **nunca** se sube al repositorio: vive solo en `.env`, que está en el `.gitignore`. Si se filtra, regeneralo en el Developer Portal con **Reset Token**.
