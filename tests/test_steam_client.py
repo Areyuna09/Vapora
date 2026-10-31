@@ -1,3 +1,5 @@
+import json
+
 import aiohttp
 import pytest
 from helpers import FakeSession
@@ -14,12 +16,19 @@ APP = {
     }
 }
 REVIEWS = {
-    "success": 1,
-    "query_summary": {
-        "review_score_desc": "Extremadamente positivas",
-        "total_positive": 97,
-        "total_reviews": 100,
-    },
+    "response": {
+        "store_items": [
+            {
+                "reviews": {
+                    "summary_filtered": {
+                        "review_count": 100,
+                        "percent_positive": 97,
+                        "review_score_label": "Extremadamente positivas",
+                    }
+                }
+            }
+        ]
+    }
 }
 CURATOR = {"results_html": '<div data-ds-appid="367520"></div>'}
 
@@ -30,7 +39,7 @@ def _client(routes: dict) -> tuple[SteamClient, FakeSession]:
 
 
 async def test_get_item_combines_details_reviews_and_argentine_flag():
-    client, _ = _client({"api/appdetails": APP, "appreviews": REVIEWS, "curator": CURATOR})
+    client, _ = _client({"api/appdetails": APP, "GetItems": REVIEWS, "curator": CURATOR})
     item = await client.get_item(ItemRef.app(367520))
     assert item is not None
     assert item.name == "Hollow Knight"
@@ -39,14 +48,14 @@ async def test_get_item_combines_details_reviews_and_argentine_flag():
 
 
 async def test_get_item_asks_for_the_argentine_store():
-    client, session = _client({"api/appdetails": APP, "appreviews": REVIEWS, "curator": CURATOR})
+    client, session = _client({"api/appdetails": APP, "GetItems": REVIEWS, "curator": CURATOR})
     await client.get_item(ItemRef.app(367520))
     _, params = next(call for call in session.calls if "appdetails" in call[0])
     assert params == {"appids": "367520", "cc": "ar", "l": "spanish"}
 
 
 async def test_items_are_cached():
-    client, session = _client({"api/appdetails": APP, "appreviews": REVIEWS, "curator": CURATOR})
+    client, session = _client({"api/appdetails": APP, "GetItems": REVIEWS, "curator": CURATOR})
     await client.get_item(ItemRef.app(367520))
     await client.get_item(ItemRef.app(367520))
     assert session.count("api/appdetails") == 1
@@ -61,13 +70,13 @@ async def test_unknown_item_is_none_and_also_cached():
 
 
 async def test_item_without_reviews_is_still_returned():
-    client, _ = _client({"api/appdetails": APP, "appreviews": aiohttp.ClientError(), "curator": CURATOR})
+    client, _ = _client({"api/appdetails": APP, "GetItems": aiohttp.ClientError(), "curator": CURATOR})
     item = await client.get_item(ItemRef.app(367520))
     assert item is not None and item.reviews is None
 
 
 async def test_item_is_returned_when_argentine_list_fails():
-    client, _ = _client({"api/appdetails": APP, "appreviews": REVIEWS, "curator": aiohttp.ClientError()})
+    client, _ = _client({"api/appdetails": APP, "GetItems": REVIEWS, "curator": aiohttp.ClientError()})
     item = await client.get_item(ItemRef.app(367520))
     assert item is not None and not item.argentine
 
@@ -208,7 +217,7 @@ async def test_search_and_deals_with_unexpected_shape_raise_steam_error():
 
 
 async def test_unexpected_reviews_are_skipped_like_a_failure():
-    client, _ = _client({"api/appdetails": APP, "appreviews": ["x"], "curator": CURATOR})
+    client, _ = _client({"api/appdetails": APP, "GetItems": ["x"], "curator": CURATOR})
     item = await client.get_item(ItemRef.app(367520))
     assert item is not None and item.reviews is None
 
@@ -220,3 +229,13 @@ async def test_searches_are_cached_while_typing():
     await client.search("  hollow  ")  # mismo texto, otra forma
     await client.search("hollow", limit=1)
     assert session.count("storesearch") == 1
+
+
+async def test_reviews_are_asked_in_spanish_for_argentina():
+    client, session = _client({"api/appdetails": APP, "GetItems": REVIEWS, "curator": CURATOR})
+    await client.get_item(ItemRef.app(367520))
+    _, params = next(call for call in session.calls if "GetItems" in call[0])
+    request = json.loads(params["input_json"])
+    assert request["ids"] == [{"appid": 367520}]
+    assert request["context"] == {"language": "spanish", "country_code": "AR"}
+    assert request["data_request"] == {"include_reviews": True}

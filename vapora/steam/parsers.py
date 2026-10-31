@@ -126,17 +126,17 @@ def parse_bundle(bundle_id: int, data: dict[str, Any]) -> StoreItem:
 
 
 def parse_reviews(payload: dict[str, Any] | None) -> Reviews | None:
-    """Resumen de reseñas, a partir de `appreviews`. `None` si todavía no tiene reseñas."""
-    payload = payload or {}
-    summary = payload.get("query_summary") or {}
-    total = summary.get("total_reviews") or 0
-    if not payload.get("success") or total == 0:
+    """Resumen de reseñas, a partir de `GetItems`. `None` si todavía no tiene reseñas."""
+    items = ((payload or {}).get("response") or {}).get("store_items") or []
+    item = items[0] if items and isinstance(items[0], dict) else {}
+    summary = (item.get("reviews") or {}).get("summary_filtered") or {}
+    total = summary.get("review_count") or 0
+    if total == 0:
         return None
-    positive = summary.get("total_positive") or 0
     return Reviews(
-        description=summary.get("review_score_desc"),
+        description=summary.get("review_score_label"),
         total=total,
-        positive_percent=round(positive * 100 / total),
+        positive_percent=summary.get("percent_positive") or 0,
     )
 
 

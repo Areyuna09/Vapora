@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Collection
 from dataclasses import replace
@@ -18,7 +19,8 @@ log = logging.getLogger(__name__)
 APP_DETAILS_URL = f"{STORE_URL}/api/appdetails"
 PACKAGE_DETAILS_URL = f"{STORE_URL}/api/packagedetails"
 BUNDLE_URL = f"{STORE_URL}/actions/ajaxresolvebundles"
-REVIEWS_URL = f"{STORE_URL}/appreviews/{{app_id}}"
+# Da el mismo resumen de reseñas que muestra la tienda. No pide API key.
+STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
 FEATURED_URL = f"{STORE_URL}/api/featuredcategories"
 SEARCH_URL = f"{STORE_URL}/api/storesearch/"
 # Curador público «Videojuegos Argentinos»: juegos desarrollados en Argentina.
@@ -152,16 +154,14 @@ class SteamClient:
 
     async def _fetch_reviews(self, app_id: int) -> Reviews | None:
         """Las reseñas son un extra: si fallan, la tarjeta se muestra igual sin ellas."""
-        params = {
-            "json": "1",
-            "language": "all",
-            "purchase_type": "all",
-            "num_per_page": "0",
-            "l": self._language,
+        request = {
+            "ids": [{"appid": app_id}],
+            "context": {"language": self._language, "country_code": self._country.upper()},
+            "data_request": {"include_reviews": True},
         }
         try:
-            url = REVIEWS_URL.format(app_id=app_id)
-            return parsers.parse_reviews(_expect(dict, await self._get_json(url, params), url))
+            payload = await self._get_json(STORE_ITEMS_URL, {"input_json": json.dumps(request)})
+            return parsers.parse_reviews(_expect(dict, payload, STORE_ITEMS_URL))
         except SteamError:
             log.warning("No se pudieron obtener las reseñas de %s", app_id, exc_info=True)
             return None

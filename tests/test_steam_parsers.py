@@ -143,20 +143,20 @@ def test_bundle_in_another_currency_is_not_usd():
 # ── Reseñas ───────────────────────────────────────────────────────────────────
 
 
+def _store_item(**reviews):
+    return {"response": {"store_items": [{"id": 1, "reviews": reviews}]}}
+
+
 def test_reviews_summary():
-    payload = {
-        "success": 1,
-        "query_summary": {
-            "review_score_desc": "Muy positivas",
-            "total_positive": 92766,
-            "total_reviews": 109737,
-        },
-    }
+    summary = {"review_count": 109737, "percent_positive": 85, "review_score_label": "Muy positivas"}
+    payload = _store_item(summary_filtered=summary)
     assert parse_reviews(payload) == Reviews("Muy positivas", total=109737, positive_percent=85)
 
 
 def test_no_reviews_yet():
-    assert parse_reviews({"success": 1, "query_summary": {"total_reviews": 0}}) is None
+    assert parse_reviews(_store_item(summary_filtered={"review_count": 0})) is None
+    assert parse_reviews({"response": {"store_items": [{"id": 1}]}}) is None
+    assert parse_reviews({"response": {}}) is None
     assert parse_reviews({}) is None
     assert parse_reviews(None) is None
 
