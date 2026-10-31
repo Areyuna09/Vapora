@@ -44,6 +44,7 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 - 🔥 **Ofertas destacadas**: `/ofertas` o todos los días en el canal que elijas, con precio en pesos.
 - 🔔 **Deseados**: cada uno arma su lista con `/deseado` o con el botón **Avisame si baja** de cada tarjeta, y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
 - 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
+- 🎁 **Juegos gratis**: avisa en el canal que elijas cuando un juego de Steam está gratis por tiempo limitado (100% de descuento). No avisa DLC ni free-to-play.
 - 🖼️ **Fondos de Wallpaper Engine**: `/fondo` recomienda uno en tendencia (con categoría opcional), hay un fondo del día en el canal que elijas, y los links del Workshop se muestran con su vista previa. Las vistas previas animadas de Steam son GIF chicos (160-256 px), así que Vapora las agranda a 480 px sin perder la animación. Solo fondos aptos para todo público.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
 - 🎨 **Color de temporada**: durante una rebaja de Steam, las tarjetas toman su color (naranja en otoño, celeste hielo en invierno, rosa en primavera y amarillo en verano).
@@ -98,7 +99,7 @@ https://discord.com/oauth2/authorize?client_id=<CLIENT_ID>&scope=bot&permissions
 | `/deseado lista` · `/deseado quitar` | Ver o sacar juegos de tus deseados (de la lista o por nombre) | Todos |
 | `/fondo` | Un fondo de Wallpaper Engine en tendencia (categoría opcional) | Todos |
 | `/ayuda` | Qué hace Vapora y cómo usarla | Todos |
-| `/config canal` | Elegir el canal de las ofertas diarias, los avisos de rebajas, los avisos de deseados o el fondo del día | Admins* |
+| `/config canal` | Elegir el canal de las ofertas diarias, los avisos de rebajas, los avisos de deseados, los de juegos gratis o el fondo del día | Admins* |
 | `/config desactivar` | Dejar de publicar ofertas o avisos | Admins* |
 | `/config ver` | Ver la configuración del servidor | Admins* |
 
@@ -140,6 +141,7 @@ Vapora usa **SQLite** (viene con Python, no hay que instalar nada). En Railway, 
 | `sent_announcements` | Avisos de rebajas ya enviados, para no repetirlos |
 | `wishlist` | Deseados de cada persona y a qué precio se avisó la última oferta |
 | `daily_posts` | Qué día se hizo cada publicación diaria (ofertas, fondo del día) en cada servidor |
+| `free_game_notices` | Juegos gratis ya avisados en cada servidor, para no repetirlos |
 
 La estructura se actualiza sola al arrancar (`PRAGMA user_version`). Si existe el `data/state.json` de versiones anteriores, se importa una vez y se renombra a `state.json.migrado`.
 
@@ -221,6 +223,7 @@ La versión de Python se fija en [`.python-version`](.python-version).
 │   └── cogs/               # Comandos, eventos y tareas, por función
 │       ├── links.py        #   responde a los links de Steam y del Workshop
 │       ├── deals.py        #   /ofertas, /rebajas y sus publicaciones
+│       ├── free_games.py   #   avisos de juegos gratis
 │       ├── wishlist.py     #   /deseado y avisos de ofertas
 │       ├── wallpapers.py   #   /fondo y el fondo del día
 │       ├── settings.py     #   /config

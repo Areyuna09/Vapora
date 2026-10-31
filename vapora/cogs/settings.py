@@ -21,6 +21,7 @@ FEATURE_CHOICES = [
     app_commands.Choice(name="📅 Avisos de rebajas de Steam", value=Feature.SALES.value),
     app_commands.Choice(name="🔔 Avisos de deseados en oferta", value=Feature.WISHLIST.value),
     app_commands.Choice(name="🖼️ Fondo del día de Wallpaper Engine", value=Feature.WALLPAPERS.value),
+    app_commands.Choice(name="🎁 Avisos de juegos gratis", value=Feature.FREE_GAMES.value),
 ]
 
 
@@ -86,6 +87,8 @@ class SettingsCog(commands.Cog):
             return f"Las voy a publicar todos los días a las {self.bot.settings.deals_hour}:00."
         if feature is Feature.SALES:
             return "Voy a avisar antes de cada rebaja, cuando empieza y en sus últimas 24 horas."
+        if feature is Feature.FREE_GAMES:
+            return "Cuando un juego de Steam esté gratis por tiempo limitado, lo aviso ahí."
         if feature is Feature.WALLPAPERS:
             hour = self.bot.settings.wallpaper_hour
             return f"Voy a publicar un fondo en tendencia todos los días a las {hour}:00."

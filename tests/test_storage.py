@@ -1,7 +1,7 @@
 import asyncio
 import json
 import sqlite3
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -246,3 +246,33 @@ async def test_wishlist_limit_holds_with_simultaneous_adds(db: Database):
     results = await asyncio.gather(*(db.add_wish(5, 1000 + n, f"Extra {n}", None) for n in range(5)))
     assert results.count(AddWishResult.ADDED) == 1
     assert len(await db.wishlist(5)) == MAX_WISHLIST_SIZE
+
+
+# ── Juegos gratis ─────────────────────────────────────────────────────────────
+
+
+async def test_version_3_database_keeps_its_channels_when_upgraded(tmp_path: Path):
+    """Así está la base en producción antes de sumar los juegos gratis."""
+    path = tmp_path / "vapora.db"
+    with sqlite3.connect(path) as conn:
+        for number, script in enumerate(MIGRATIONS[:3], start=1):
+            conn.executescript(script)
+            conn.execute(f"PRAGMA user_version = {number}")
+        conn.execute("INSERT INTO guild_channels (guild_id, feature, channel_id) VALUES (10, 'fondos', 400)")
+    conn.close()
+
+    database = Database(path, tmp_path / "state.json")
+    await database.set_channel(10, Feature.FREE_GAMES, 700)  # la v4 acepta el tipo nuevo
+    assert await database.channels(10) == {Feature.WALLPAPERS: 400, Feature.FREE_GAMES: 700}
+
+
+async def test_free_game_notices_are_per_guild_and_dated(db: Database):
+    old, recent = datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC)
+    await db.mark_free_game_noticed(10, 1, old)
+    await db.mark_free_game_noticed(10, 2, recent)
+    await db.mark_free_game_noticed(11, 3, recent)
+    since = datetime(2026, 9, 1, tzinfo=UTC)
+    assert await db.free_games_noticed(10, since) == {2}
+
+    await db.mark_free_game_noticed(10, 1, recent)  # volvió a estar gratis
+    assert await db.free_games_noticed(10, since) == {1, 2}

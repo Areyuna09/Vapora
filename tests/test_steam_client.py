@@ -231,6 +231,55 @@ async def test_searches_are_cached_while_typing():
     assert session.count("storesearch") == 1
 
 
+# ── Juegos gratis ─────────────────────────────────────────────────────────────
+
+
+def _search_row(item_key: str, *, discount: int = 100, final: int = 0) -> str:
+    return (
+        f'<a href="https://store.steampowered.com/x" data-ds-itemkey="{item_key}">'
+        f'<div data-price-final="{final}"></div><div data-discount="{discount}"></div></a>'
+    )
+
+
+async def test_free_promos_come_from_the_store_search():
+    rows = "".join(
+        [
+            _search_row("App_1"),
+            _search_row("App_1"),  # repetido
+            _search_row("App_2", discount=50, final=100),  # oferta común
+            _search_row("App_3", discount=0),  # free-to-play: gratis sin descuento
+            _search_row("Sub_4"),  # paquete
+            _search_row("App_5"),
+        ]
+    )
+    client, session = _client({"search/results": {"success": 1, "results_html": rows}})
+    assert await client.free_promo_app_ids() == [1, 5]
+    _, params = session.calls[0]
+    assert (params["maxprice"], params["specials"], params["cc"]) == ("free", "1", "ar")
+
+
+async def test_no_free_promos_is_an_empty_list():
+    client, _ = _client({"search/results": {"success": 1, "results_html": ""}})
+    assert await client.free_promo_app_ids() == []
+
+
+@pytest.mark.parametrize("payload", [{}, [], None, {"results_html": 5}])
+async def test_unexpected_search_response_raises_steam_error(payload: object):
+    client, _ = _client({"search/results": payload})
+    with pytest.raises(SteamError):
+        await client.free_promo_app_ids()
+
+
+async def test_refresh_item_skips_the_cache_and_updates_it():
+    client, session = _client({"api/appdetails": APP, "GetItems": REVIEWS, "curator": CURATOR})
+    await client.get_item(ItemRef.app(367520))
+    fresh = await client.refresh_item(ItemRef.app(367520))
+    assert fresh is not None and fresh.argentine
+    assert session.count("api/appdetails") == 2
+    await client.get_item(ItemRef.app(367520))
+    assert session.count("api/appdetails") == 2  # queda en caché
+
+
 async def test_reviews_are_asked_in_spanish_for_argentina():
     client, session = _client({"api/appdetails": APP, "GetItems": REVIEWS, "curator": CURATOR})
     await client.get_item(ItemRef.app(367520))

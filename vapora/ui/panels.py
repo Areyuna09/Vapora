@@ -16,6 +16,7 @@ FEATURE_LABELS = {
     Feature.SALES: "📅 Avisos de rebajas",
     Feature.WISHLIST: "🔔 Avisos de deseados",
     Feature.WALLPAPERS: "🖼️ Fondo del día",
+    Feature.FREE_GAMES: "🎁 Avisos de juegos gratis",
 }
 
 
@@ -49,7 +50,7 @@ def build_help_embed(*, is_admin: bool, taxes: Taxes, rates_refresh_minutes: int
         embed.add_field(
             name="⚙️ Administración",
             value="`/config canal` · elegir dónde publico ofertas diarias, avisos de rebajas, "
-            "de deseados y el fondo del día\n"
+            "de deseados, de juegos gratis y el fondo del día\n"
             "`/config ver` · ver la configuración del servidor\n"
             "`/config desactivar` · dejar de publicar algo",
             inline=False,

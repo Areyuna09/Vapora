@@ -71,11 +71,19 @@ class StoreItem:
     coming_soon: bool = False
     genres: tuple[str, ...] = ()
     developers: tuple[str, ...] = ()
+    is_dlc: bool = False
     dlc_of: str | None = None  # nombre del juego base, si es un DLC
     included: tuple[str, ...] = ()  # nombres de lo que trae un paquete
     included_count: int = 0  # cantidad de productos de un paquete o bundle
     reviews: Reviews | None = None
     argentine: bool = False
+
+    @property
+    def is_free_promo(self) -> bool:
+        """Juego completo que hoy está gratis por una promo (no un DLC ni un free-to-play)."""
+        price = self.price
+        is_game = self.ref.kind is ItemKind.APP and not self.is_dlc
+        return is_game and price is not None and price.on_sale and price.final_cents == 0
 
     @property
     def is_wishable(self) -> bool:

@@ -38,7 +38,7 @@ def format_item_price(item: StoreItem) -> str:
     price = item.price
     if price is None:
         return "**Gratis**" if item.is_free else "Sin precio disponible"
-    text = f"**{format_steam_price(price)}**"
+    text = "**Gratis**" if price.final_cents == 0 else f"**{format_steam_price(price)}**"
     original = format_original_price(price)
     if price.on_sale and original:
         text += f"\n~~{original}~~ (-{price.discount_percent}%)"

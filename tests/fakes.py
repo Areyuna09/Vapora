@@ -31,11 +31,22 @@ class FakeSteam:
         self.down = False
         self.price_requests: list[set[int]] = []
         self.item_requests: list[ItemRef] = []
+        self.free_promo_ids: list[int] = []
+        self.refreshed: list[ItemRef] = []
 
     async def get_item(self, ref: ItemRef) -> StoreItem | None:
         self._check()
         self.item_requests.append(ref)
         return self.items.get(ref)
+
+    async def refresh_item(self, ref: ItemRef) -> StoreItem | None:
+        self._check()
+        self.refreshed.append(ref)
+        return self.items.get(ref)
+
+    async def free_promo_app_ids(self) -> list[int]:
+        self._check()
+        return self.free_promo_ids
 
     async def prices(self, app_ids: Collection[int]) -> dict[int, Price | None]:
         self._check()

@@ -13,6 +13,8 @@ from vapora.steam.models import Deal, ItemKind, ItemRef, Price, Reviews, SearchR
 # Campo "type" de las ofertas de la portada (featuredcategories).
 _FEATURED_KINDS = {0: ItemKind.APP, 1: ItemKind.PACKAGE, 2: ItemKind.BUNDLE}
 _CURATOR_APP_ID_RE = re.compile(r'data-ds-appid="(\d+)"')
+_SEARCH_ROW_RE = re.compile(r"<a\b.*?</a>", re.DOTALL)
+_SEARCH_APP_RE = re.compile(r'data-ds-itemkey="App_(\d+)"')
 
 
 def _savings_percent(final_cents: int, initial_cents: int) -> int:
@@ -38,6 +40,7 @@ def parse_app(app_id: int, data: dict[str, Any]) -> StoreItem:
         price=parse_price_overview(data.get("price_overview")),
         release_date=release.get("date") or None,
         coming_soon=bool(release.get("coming_soon")),
+        is_dlc=is_dlc,
         genres=tuple(g["description"] for g in data.get("genres") or [] if g.get("description")),
         developers=tuple(data.get("developers") or []),
         dlc_of=(data.get("fullgame") or {}).get("name") if is_dlc else None,
@@ -48,10 +51,12 @@ def parse_price_overview(overview: dict[str, Any] | None) -> Price | None:
     """Precio de un juego (`price_overview` de `appdetails`). `None` si es gratis o no se vende."""
     if not overview or overview.get("final") is None:
         return None
+    discount = overview.get("discount_percent", 0)
     return Price(
-        final_cents=overview["final"],
+        # Con 100% de descuento, Steam informa como "final" el precio normal.
+        final_cents=0 if discount >= 100 else overview["final"],
         initial_cents=overview.get("initial"),
-        discount_percent=overview.get("discount_percent", 0),
+        discount_percent=discount,
         currency=overview.get("currency"),
     )
 
@@ -167,6 +172,20 @@ def parse_search_results(payload: dict[str, Any] | None) -> list[SearchResult]:
     """Juegos encontrados por el buscador de la tienda (`storesearch`)."""
     items = (payload or {}).get("items") or []
     return [SearchResult(item["id"], item["name"]) for item in items if item.get("type") == "app"]
+
+
+def parse_free_promo_app_ids(results_html: str) -> list[int]:
+    """AppIDs con 100% de descuento en una búsqueda de la tienda, en orden y sin repetir.
+
+    Los free-to-play no tienen descuento, así que quedan afuera. Los paquetes y bundles
+    también: acá solo interesan los juegos.
+    """
+    app_ids = []
+    for row in _SEARCH_ROW_RE.findall(results_html):
+        app = _SEARCH_APP_RE.search(row)
+        if app and 'data-discount="100"' in row and 'data-price-final="0"' in row:
+            app_ids.append(int(app.group(1)))
+    return list(dict.fromkeys(app_ids))
 
 
 def parse_curator_app_ids(results_html: str | None) -> frozenset[int]:

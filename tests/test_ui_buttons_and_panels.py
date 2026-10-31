@@ -94,6 +94,7 @@ def test_config_embed_lists_every_feature():
         ("📅 Avisos de rebajas", "Desactivado"),
         ("🔔 Avisos de deseados", "<#300>"),
         ("🖼️ Fondo del día", "<#400>\nTodos los días a las 18:00 (hora argentina)"),
+        ("🎁 Avisos de juegos gratis", "Desactivado"),
     ]
 
 

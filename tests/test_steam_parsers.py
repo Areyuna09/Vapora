@@ -219,3 +219,23 @@ def test_curator_app_ids_without_repeats():
     html = '<div data-ds-appid="123"></div><a data-ds-appid="123"></a><div data-ds-appid="456"></div>'
     assert parse_curator_app_ids(html) == {123, 456}
     assert parse_curator_app_ids(None) == frozenset()
+
+
+def test_full_discount_means_the_game_costs_nothing():
+    """Con 100% de descuento, Steam informa como "final" el precio normal."""
+    overview = {"currency": "USD", "initial": 579, "final": 579, "discount_percent": 100}
+    item = parse_app(1583850, {"type": "game", "name": "Asleep", "is_free": True, "price_overview": overview})
+    assert item.price is not None
+    assert (item.price.final_cents, item.price.initial_cents, item.price.discount_percent) == (0, 579, 100)
+    assert item.is_free_promo
+
+
+def test_only_full_games_on_promo_count_as_free_promos():
+    full = {"currency": "USD", "initial": 329, "final": 329, "discount_percent": 100}
+    dlc = parse_app(1, {"type": "dlc", "name": "Pack", "price_overview": full})
+    free_to_play = parse_app(2, {"type": "game", "name": "Dota", "is_free": True})
+    half = {"currency": "USD", "initial": 1000, "final": 500, "discount_percent": 50}
+    on_sale = parse_app(3, {"type": "game", "name": "Oferta", "price_overview": half})
+    assert not dlc.is_free_promo
+    assert not free_to_play.is_free_promo
+    assert not on_sale.is_free_promo

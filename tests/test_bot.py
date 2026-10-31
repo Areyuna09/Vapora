@@ -63,6 +63,7 @@ async def test_background_tasks_are_running(bot: VaporaBot):
     assert bot.get_cog("DealsCog").post_daily_deals.is_running()  # type: ignore[union-attr]
     assert bot.get_cog("DealsCog").announce_sales.is_running()  # type: ignore[union-attr]
     assert bot.get_cog("WishlistCog").check_prices.is_running()  # type: ignore[union-attr]
+    assert bot.get_cog("FreeGamesCog").check_free_games.is_running()  # type: ignore[union-attr]
     assert bot.get_cog("WallpapersCog").post_daily_wallpaper.is_running()  # type: ignore[union-attr]
 
 

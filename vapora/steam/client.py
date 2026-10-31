@@ -23,6 +23,7 @@ BUNDLE_URL = f"{STORE_URL}/actions/ajaxresolvebundles"
 STORE_ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
 FEATURED_URL = f"{STORE_URL}/api/featuredcategories"
 SEARCH_URL = f"{STORE_URL}/api/storesearch/"
+SEARCH_RESULTS_URL = f"{STORE_URL}/search/results/"
 # Curador público «Videojuegos Argentinos»: juegos desarrollados en Argentina.
 ARGENTINE_CURATOR_URL = f"{STORE_URL}/curator/45013169/ajaxgetfilteredrecommendations/"
 
@@ -30,6 +31,7 @@ T = TypeVar("T")
 
 ITEM_TTL_SECONDS = 60 * 60
 SEARCH_TTL_SECONDS = 10 * 60  # el autocompletado repite las mismas búsquedas mientras se escribe
+FREE_PROMOS_PER_SEARCH = 100
 PRICES_PER_REQUEST = 100  # appdetails acepta varios juegos juntos si se pide solo el precio
 ARGENTINE_LIST_TTL_SECONDS = 24 * 60 * 60
 
@@ -59,10 +61,44 @@ class SteamClient:
         Raises:
             SteamError: si Steam no responde.
         """
-        item = await self._items.get_or_fetch(ref, lambda: self._fetch_item(ref))
+        return await self._mark_argentine(
+            ref, await self._items.get_or_fetch(ref, lambda: self._fetch_item(ref))
+        )
+
+    async def refresh_item(self, ref: ItemRef) -> StoreItem | None:
+        """Como `get_item`, pero siempre pide los datos actuales a Steam."""
+        item = await self._fetch_item(ref)
+        self._items.put(ref, item)
+        return await self._mark_argentine(ref, item)
+
+    async def _mark_argentine(self, ref: ItemRef, item: StoreItem | None) -> StoreItem | None:
         if item is not None and ref.kind is ItemKind.APP:
             return replace(item, argentine=ref.id in await self.argentine_app_ids())
         return item
+
+    async def free_promo_app_ids(self) -> list[int]:
+        """AppIDs que hoy están con 100% de descuento, según el buscador de la tienda.
+
+        Steam no tiene una API para esto. Incluye DLC: `StoreItem.is_free_promo` los distingue.
+
+        Raises:
+            SteamError: si Steam no responde o la respuesta no tiene el formato esperado.
+        """
+        params = {
+            "query": "",
+            "start": "0",
+            "count": str(FREE_PROMOS_PER_SEARCH),
+            "maxprice": "free",
+            "specials": "1",
+            "infinite": "1",
+            "ignore_preferences": "1",
+            **self._region,
+        }
+        payload = await self._get_json(SEARCH_RESULTS_URL, params)
+        results = payload.get("results_html") if isinstance(payload, dict) else None
+        if not isinstance(results, str):
+            raise SteamError(f"Respuesta inesperada de {SEARCH_RESULTS_URL}")
+        return parsers.parse_free_promo_app_ids(results)
 
     async def prices(self, app_ids: Collection[int]) -> dict[int, Price | None]:
         """Precio actual de varios juegos, sin caché y en pocos pedidos (solo trae el precio).

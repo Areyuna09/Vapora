@@ -80,5 +80,12 @@ def build_card_buttons(items: Sequence[StoreItem]) -> discord.ui.View:
     return view
 
 
+def build_free_game_buttons(item: StoreItem) -> discord.ui.View:
+    """Botón del aviso de juego gratis: ir a la tienda a reclamarlo."""
+    view = discord.ui.View(timeout=None)
+    view.add_item(discord.ui.Button(style=discord.ButtonStyle.link, label="🎁 Reclamar", url=item.ref.url))
+    return view
+
+
 def _clip(label: str) -> str:
     return label[:MAX_LABEL_LENGTH]

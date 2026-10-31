@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from vapora.cogs.deals import DealsCog
+from vapora.cogs.free_games import FreeGamesCog
 from vapora.cogs.general import GeneralCog
 from vapora.cogs.health import HealthCog
 from vapora.cogs.links import LinksCog
@@ -33,7 +34,7 @@ log = logging.getLogger(__name__)
 
 STATUS_TEXT = "Precios de Steam 🇦🇷"  # se ve debajo del nombre en la lista de miembros
 HTTP_TIMEOUT_SECONDS = 15
-COGS = (LinksCog, DealsCog, WishlistCog, WallpapersCog, SettingsCog, GeneralCog, HealthCog)
+COGS = (LinksCog, DealsCog, FreeGamesCog, WishlistCog, WallpapersCog, SettingsCog, GeneralCog, HealthCog)
 
 
 class VaporaTree(app_commands.CommandTree["VaporaBot"]):

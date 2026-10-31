@@ -4,6 +4,7 @@ Tablas:
 - guild_channels: canal elegido con /config para cada tipo de aviso de cada servidor.
 - sent_announcements: avisos de rebajas ya enviados (para no repetirlos al reiniciar).
 - wishlist: deseados de cada usuario y a qué precio se avisó la última oferta.
+- free_game_notices: juegos gratis ya avisados en cada servidor, y cuándo.
 - daily_posts: último día en que se hizo cada publicación diaria (como las ofertas destacadas)
   en cada servidor.
 
@@ -21,7 +22,7 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TypeVar
@@ -40,6 +41,7 @@ class Feature(StrEnum):
     SALES = "rebajas"
     WISHLIST = "deseados"
     WALLPAPERS = "fondos"
+    FREE_GAMES = "gratis"
 
 
 class AddWishResult(Enum):
@@ -115,6 +117,28 @@ MIGRATIONS: tuple[str, ...] = (
         SELECT guild_id, feature, channel_id, updated_at FROM guild_channels;
     DROP TABLE guild_channels;
     ALTER TABLE guild_channels_v3 RENAME TO guild_channels;
+    """,
+    # v4: suma el tipo de aviso 'gratis' y recuerda qué juegos gratis ya se avisaron. Para
+    # deshacerlo alcanza con borrar las filas 'gratis': igual que en la v3.
+    """
+    CREATE TABLE guild_channels_v4 (
+        guild_id    INTEGER NOT NULL,
+        feature     TEXT    NOT NULL
+                    CHECK (feature IN ('ofertas', 'rebajas', 'deseados', 'fondos', 'gratis')),
+        channel_id  INTEGER NOT NULL,
+        updated_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, feature)
+    );
+    INSERT INTO guild_channels_v4 (guild_id, feature, channel_id, updated_at)
+        SELECT guild_id, feature, channel_id, updated_at FROM guild_channels;
+    DROP TABLE guild_channels;
+    ALTER TABLE guild_channels_v4 RENAME TO guild_channels;
+    CREATE TABLE free_game_notices (
+        guild_id     INTEGER NOT NULL,
+        app_id       INTEGER NOT NULL,
+        noticed_at   TEXT    NOT NULL,  -- fecha y hora UTC en formato ISO
+        PRIMARY KEY (guild_id, app_id)
+    );
     """,
 )
 
@@ -234,6 +258,30 @@ class Database:
                 "INSERT INTO daily_posts (guild_id, feature, last_posted) VALUES (?, ?, ?) "
                 "ON CONFLICT (guild_id, feature) DO UPDATE SET last_posted = excluded.last_posted",
                 (guild_id, feature, day.isoformat()),
+            )
+
+        await self._run(query)
+
+    # ── Juegos gratis avisados ────────────────────────────────────────────────
+
+    async def free_games_noticed(self, guild_id: int, since: datetime) -> set[int]:
+        """AppIDs de los juegos gratis avisados en un servidor desde `since` (en UTC)."""
+
+        def query(conn: sqlite3.Connection) -> set[int]:
+            rows = conn.execute(
+                "SELECT app_id FROM free_game_notices WHERE guild_id = ? AND noticed_at >= ?",
+                (guild_id, since.isoformat()),
+            )
+            return {row["app_id"] for row in rows}
+
+        return await self._run(query)
+
+    async def mark_free_game_noticed(self, guild_id: int, app_id: int, when: datetime) -> None:
+        def query(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "INSERT INTO free_game_notices (guild_id, app_id, noticed_at) VALUES (?, ?, ?) "
+                "ON CONFLICT (guild_id, app_id) DO UPDATE SET noticed_at = excluded.noticed_at",
+                (guild_id, app_id, when.isoformat()),
             )
 
         await self._run(query)
