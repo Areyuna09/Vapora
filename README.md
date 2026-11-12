@@ -45,6 +45,7 @@ Vapora escucha los mensajes del servidor. Cuando alguien comparte un link de la 
 - 🔔 **Deseados**: cada uno arma su lista con `/deseado` o con el botón **Avisame si baja** de cada tarjeta, y Vapora lo menciona en el canal de deseados cuando un juego entra en oferta.
 - 📅 **Rebajas de Steam**: `/rebajas` y avisos automáticos una semana antes, un día antes, al empezar y en las últimas 24 h.
 - 🎁 **Juegos gratis**: avisa en el canal que elijas cuando un juego de Steam está gratis por tiempo limitado (100% de descuento). No avisa DLC ni free-to-play.
+- 🧩 **Mods del Workshop**: los links de mods de cualquier juego (Project Zomboid, por ejemplo) se muestran con su imagen, el juego, las etiquetas (como la build), suscriptores y fecha de actualización.
 - 🖼️ **Fondos de Wallpaper Engine**: `/fondo` recomienda uno en tendencia (con categoría opcional), hay un fondo del día en el canal que elijas, y los links del Workshop se muestran con su vista previa. Las vistas previas animadas de Steam son GIF chicos (160-256 px), así que Vapora las agranda a 480 px sin perder la animación. Solo fondos aptos para todo público.
 - 🧹 **Reemplaza el preview de Discord** por su propia tarjeta, así no quedan dos.
 - 🎨 **Color de temporada**: durante una rebaja de Steam, las tarjetas toman su color (naranja en otoño, celeste hielo en invierno, rosa en primavera y amarillo en verano).
@@ -216,6 +217,7 @@ La versión de Python se fija en [`.python-version`](.python-version).
 │   ├── ui/                 # Lo que se ve en Discord
 │   │   ├── game_card.py    #   tarjeta de un juego
 │   │   ├── wallpaper_card.py # tarjeta de un fondo
+│   │   ├── mod_card.py     #   tarjeta de un mod del Workshop
 │   │   ├── announcements.py#   ofertas y avisos de rebajas
 │   │   ├── panels.py       #   /ayuda, /config y /deseado
 │   │   ├── buttons.py      #   botones de las tarjetas

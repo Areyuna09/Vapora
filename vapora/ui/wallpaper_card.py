@@ -67,14 +67,15 @@ def _description(wallpaper: Wallpaper) -> str | None:
     return "\n".join(parts) or None
 
 
-def add_wallpaper_buttons(view: discord.ui.View, wallpapers: Sequence[Wallpaper], *, first_row: int) -> None:
+def add_wallpaper_buttons(view: discord.ui.View, wallpapers: Sequence[Wallpaper], *, first_row: int) -> int:
     """Agrega a `view` un botón "Ver en Steam" por fondo y uno a la tienda de Wallpaper Engine.
 
     `first_row` es la primera fila libre (las anteriores pueden tener botones de juegos).
-    Si no entran en las 5 filas de Discord, se deja que Discord las acomode.
+    Si no entran en las 5 filas de Discord, se deja que Discord las acomode. Devuelve la
+    primera fila que queda libre después de estos botones.
     """
     if not wallpapers:
-        return
+        return first_row
     single = len(wallpapers) == 1
     # Con un fondo, sus dos botones van en una fila; con varios, uno por fila y la tienda al final.
     rows_needed = 1 if single else len(wallpapers) + 1
@@ -95,6 +96,7 @@ def add_wallpaper_buttons(view: discord.ui.View, wallpapers: Sequence[Wallpaper]
             row=store_row,
         )
     )
+    return first_row + rows_needed
 
 
 def build_wallpaper_buttons(wallpapers: Sequence[Wallpaper]) -> discord.ui.View:

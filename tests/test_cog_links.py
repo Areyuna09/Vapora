@@ -9,7 +9,7 @@ from vapora.cogs import links as links_module
 from vapora.cogs.links import LinksCog
 from vapora.pricing import ExchangeRates
 from vapora.steam import ItemKind
-from vapora.steam.workshop import Wallpaper
+from vapora.steam.workshop import Wallpaper, WorkshopMod
 from vapora.storage import Database
 from vapora.ui.buttons import WishButton
 
@@ -253,3 +253,67 @@ async def test_wallpapers_use_the_original_preview_without_attach_permission(bot
     reply = sent_kwargs(message.reply)
     assert reply["files"] == []
     assert reply["embeds"][0].image.url == "https://img/nikke.gif"
+
+
+# ── Mods del Workshop ─────────────────────────────────────────────────────────
+
+RACKS = WorkshopMod(
+    id=3835057498,
+    app_id=108600,
+    title="Johnson's Weapon Racks",
+    preview_url="https://img/racks.png",
+    tags=("Build 42", "Weapons"),
+    subscriptions=19008,
+)
+PZ = make_item(108600, "Project Zomboid", price_cents=1999)
+RACKS_LINK = "https://steamcommunity.com/sharedfiles/filedetails/?id=3835057498"
+
+
+async def test_mod_link_gets_a_card_with_its_image_and_game(bot: FakeBot):
+    bot.steam.items[PZ.ref] = PZ
+    bot.workshop = FakeWorkshop(RACKS)
+    message = make_message(f"miren este mod {RACKS_LINK}")
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    (card,) = reply["embeds"]
+    assert card.title == "🧩 Johnson's Weapon Racks"
+    assert card.image.url == "https://img/racks.png"
+    assert card.description.startswith("🎮 Mod de **Project Zomboid**")
+    assert [button.label for button in reply["view"].children] == ["🧩 Ver en Steam"]
+    message.edit.assert_awaited_once_with(suppress=True)  # sin el preview vacío de Discord
+
+
+async def test_mod_card_still_shows_when_the_game_lookup_fails(bot: FakeBot):
+    bot.workshop = FakeWorkshop(RACKS)  # el juego no está en la tienda falsa
+    message = make_message(RACKS_LINK)
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    (card,) = sent_kwargs(message.reply)["embeds"]
+    assert card.description == "🏷️ Build 42 · Weapons"
+
+
+async def test_game_wallpaper_and_mod_in_one_message(bot: FakeBot):
+    bot.steam.items[PZ.ref] = PZ
+    bot.workshop = FakeWorkshop(WALLPAPER, RACKS)
+    message = make_message(f"{LINK} {WORKSHOP_LINK} {RACKS_LINK}")
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    assert [card.title for card in reply["embeds"]] == [
+        "🇦🇷 Hollow Knight",
+        "🖼️ Nikke",
+        "🧩 Johnson's Weapon Racks",
+    ]
+    rows = {}
+    for child in reply["view"].children:
+        item = child.item if isinstance(child, WishButton) else child
+        rows.setdefault(item.row, []).append(item.label)
+    assert rows[2] == ["🧩 Ver en Steam"]  # debajo de los botones del juego y del fondo
+
+
+async def test_small_animated_mod_preview_is_enlarged(bot: FakeBot):
+    bot.workshop = FakeWorkshop(RACKS)
+    bot.previews.enlarged_by_url["https://img/racks.png"] = b"GIF89a-agrandado"
+    message = make_message(RACKS_LINK)
+    await LinksCog(bot).on_message(message)  # type: ignore[arg-type]
+    reply = sent_kwargs(message.reply)
+    assert [file.filename for file in reply["files"]] == ["mod-3835057498.gif"]
+    assert reply["embeds"][0].image.url == "attachment://mod-3835057498.gif"

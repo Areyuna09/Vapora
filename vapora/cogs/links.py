@@ -1,4 +1,4 @@
-"""Responde con una tarjeta cuando alguien comparte un link de Steam o de un fondo del Workshop."""
+"""Responde con una tarjeta cuando alguien comparte un link de Steam o del Workshop."""
 
 from __future__ import annotations
 
@@ -10,9 +10,10 @@ from discord.ext import commands
 
 from vapora.permissions import can_hide_previews, missing_send_permissions
 from vapora.steam import ItemRef, SteamError, StoreItem, extract_item_refs
-from vapora.steam.workshop import Wallpaper, extract_workshop_ids
+from vapora.steam.workshop import Wallpaper, WorkshopItem, WorkshopMod, extract_workshop_ids
 from vapora.ui.buttons import build_card_buttons
 from vapora.ui.game_card import build_game_card
+from vapora.ui.mod_card import add_mod_buttons, build_mod_message
 from vapora.ui.wallpaper_card import add_wallpaper_buttons, build_wallpaper_message
 
 if TYPE_CHECKING:
@@ -45,8 +46,10 @@ class LinksCog(commands.Cog):
             log.info("Links de %s ignorados: pasó el límite de mensajes con links", message.author.id)
             return
         items = await self._fetch_items(refs)
-        wallpapers = await self._fetch_wallpapers(workshop_ids)
-        if not items and not wallpapers:
+        workshop_items = await self._fetch_workshop_items(workshop_ids)
+        wallpapers = [item for item in workshop_items if isinstance(item, Wallpaper)]
+        mods = [item for item in workshop_items if isinstance(item, WorkshopMod)]
+        if not items and not workshop_items:
             return
 
         embeds: list[discord.Embed] = []
@@ -55,13 +58,12 @@ class LinksCog(commands.Cog):
             sale = await self.bot.current_sale()
             embeds = [build_game_card(item, converter, sale) for item in items]
         can_attach = not missing_send_permissions(message.channel, files=True)
-        wallpaper_embeds, files = await self._wallpaper_cards(wallpapers, can_attach=can_attach)
+        workshop_embeds, files = await self._workshop_cards([*wallpapers, *mods], can_attach=can_attach)
         view = build_card_buttons(items)
-        add_wallpaper_buttons(view, wallpapers, first_row=len(items))
+        next_row = add_wallpaper_buttons(view, wallpapers, first_row=len(items))
+        add_mod_buttons(view, mods, first_row=next_row)
         try:
-            await message.reply(
-                embeds=embeds + wallpaper_embeds, files=files, view=view, mention_author=False
-            )
+            await message.reply(embeds=embeds + workshop_embeds, files=files, view=view, mention_author=False)
         except discord.HTTPException:
             # Sin permiso para escribir en ese canal, por ejemplo: no se oculta el preview
             # original, así el link no queda sin ninguna tarjeta.
@@ -82,39 +84,50 @@ class LinksCog(commands.Cog):
                 items.append(item)
         return items
 
-    async def _fetch_wallpapers(self, wallpaper_ids: list[int]) -> list[Wallpaper]:
-        """Fondos de Wallpaper Engine enlazados.
+    async def _fetch_workshop_items(self, item_ids: list[int]) -> list[WorkshopItem]:
+        """Fondos y mods del Workshop enlazados.
 
-        Los que no son de Wallpaper Engine o no son para todo público se saltean sin tarjeta.
+        Los que no existen o no se pueden mostrar (fondos +18) se saltean sin tarjeta.
         """
-        wallpapers = []
-        for wallpaper_id in wallpaper_ids:
+        workshop_items = []
+        for item_id in item_ids:
             try:
-                wallpaper = await self.bot.workshop.get(wallpaper_id)
+                item = await self.bot.workshop.get_item(item_id)
             except SteamError:
-                log.warning("No se pudo consultar el fondo %s", wallpaper_id, exc_info=True)
+                log.warning("No se pudo consultar el ítem del Workshop %s", item_id, exc_info=True)
                 continue
-            if wallpaper is not None:
-                wallpapers.append(wallpaper)
-        return wallpapers
+            if item is not None:
+                workshop_items.append(item)
+        return workshop_items
 
-    async def _wallpaper_cards(
-        self, wallpapers: list[Wallpaper], *, can_attach: bool
+    async def _game_name(self, app_id: int) -> str | None:
+        """Nombre del juego de un mod. Es un extra: si Steam falla, la tarjeta sale sin él."""
+        try:
+            game = await self.bot.steam.get_item(ItemRef.app(app_id))
+        except SteamError:
+            return None
+        return game.name if game is not None else None
+
+    async def _workshop_cards(
+        self, workshop_items: list[WorkshopItem], *, can_attach: bool
     ) -> tuple[list[discord.Embed], list[discord.File]]:
-        """Tarjetas de los fondos, con la vista previa agrandada adjunta mientras entre.
+        """Tarjetas de fondos y mods, con la vista previa animada agrandada adjunta mientras entre.
 
         Los adjuntos de un mensaje no pueden pasar el límite de Discord: los que no entran
         (o todos, si Vapora no puede adjuntar archivos en el canal) usan la vista previa original.
         """
         embeds, files, attached_bytes = [], [], 0
-        for wallpaper in wallpapers:
-            enlarged = await self.bot.previews.enlarged(wallpaper.preview_url) if can_attach else None
+        for item in workshop_items:
+            enlarged = await self.bot.previews.enlarged(item.preview_url) if can_attach else None
             if enlarged is not None and attached_bytes + len(enlarged) > MAX_ATTACHED_BYTES:
                 enlarged = None
-            embed, wallpaper_files = build_wallpaper_message(wallpaper, enlarged)
+            if isinstance(item, Wallpaper):
+                embed, item_files = build_wallpaper_message(item, enlarged)
+            else:
+                embed, item_files = build_mod_message(item, enlarged, await self._game_name(item.app_id))
             attached_bytes += len(enlarged or b"")
             embeds.append(embed)
-            files += wallpaper_files
+            files += item_files
         return embeds, files
 
     async def _hide_link_preview(self, message: discord.Message) -> None:

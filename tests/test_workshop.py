@@ -7,9 +7,11 @@ from vapora.steam.workshop import (
     WALLPAPER_ENGINE_APP_ID,
     Wallpaper,
     WorkshopClient,
+    WorkshopMod,
     extract_workshop_ids,
     parse_browse_ids,
     parse_wallpapers,
+    parse_workshop_items,
 )
 
 NIKKE = {
@@ -211,3 +213,76 @@ async def test_wallpapers_seen_in_trending_need_no_extra_request():
     await client.trending()
     await client.get(3594441070)
     assert session.count("GetPublishedFileDetails") == 1
+
+
+# ── Mods de otros juegos ──────────────────────────────────────────────────────
+
+RACKS = {
+    "publishedfileid": "3835057498",
+    "result": 1,
+    "consumer_app_id": 108600,  # Project Zomboid
+    "preview_url": "https://images.steamusercontent.com/ugc/1/racks.png",
+    "title": "Johnson's Weapon Racks",
+    "visibility": 0,
+    "banned": 0,
+    "subscriptions": 19008,
+    "favorited": 1200,
+    "file_size": "7340032",
+    "time_updated": 1790000000,
+    "tags": [{"tag": "Build 42"}, {"tag": "Weapons"}],
+}
+
+
+def test_mods_of_other_games_are_parsed():
+    (mod,) = parse_workshop_items(_details(RACKS))
+    assert mod == WorkshopMod(
+        id=3835057498,
+        app_id=108600,
+        title="Johnson's Weapon Racks",
+        preview_url="https://images.steamusercontent.com/ugc/1/racks.png",
+        tags=("Build 42", "Weapons"),
+        subscriptions=19008,
+        favorites=1200,
+        file_size=7340032,
+        updated_at=1790000000,
+    )
+
+
+def test_wallpapers_and_mods_come_out_as_their_own_kind():
+    items = parse_workshop_items(_details(NIKKE, RACKS))
+    assert [type(item).__name__ for item in items] == ["Wallpaper", "WorkshopMod"]
+    assert parse_wallpapers(_details(NIKKE, RACKS)) == [items[0]]
+
+
+def test_mods_are_shown_whatever_their_tags():
+    """El filtro de contenido para adultos es solo para Wallpaper Engine."""
+    entry = {**RACKS, "tags": [{"tag": "Build 42"}, {"tag": "Mature"}]}
+    (mod,) = parse_workshop_items(_details(entry))
+    assert mod.tags == ("Build 42", "Mature")
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {**RACKS, "visibility": 2},  # oculto
+        {**RACKS, "banned": 1},
+        {**RACKS, "consumer_app_id": "108600"},  # sin un juego válido
+        {"publishedfileid": "1", "result": 9},  # no existe
+    ],
+)
+def test_hidden_or_broken_mods_are_not_shown(entry: dict):
+    assert parse_workshop_items(_details(entry)) == []
+
+
+def test_mod_with_odd_numbers_still_shows():
+    entry = {**RACKS, "file_size": "no es un número", "time_updated": None, "subscriptions": None}
+    (mod,) = parse_workshop_items(_details(entry))
+    assert (mod.file_size, mod.updated_at, mod.subscriptions) == (0, None, 0)
+
+
+async def test_get_item_returns_mods_and_get_only_wallpapers():
+    client, session = _client({"GetPublishedFileDetails": _details(RACKS)})
+    mod = await client.get_item(3835057498)
+    assert isinstance(mod, WorkshopMod)
+    assert await client.get(3835057498) is None  # no es un fondo
+    assert session.count("GetPublishedFileDetails") == 1  # quedó en caché
